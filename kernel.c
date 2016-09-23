@@ -75,7 +75,54 @@ __attribute__((weak)) void app_shutdown(unsigned reason)
     HYPERVISOR_sched_op(SCHEDOP_shutdown, &sched_shutdown);
 }
 
-static void shutdown_thread(void *p)
+void suspend_frontends(void)
+{
+#ifdef CONFIG_NETFRONT
+   suspend_netfront();
+#endif
+}
+
+void resume_frontends(int rc)
+{
+#ifdef CONFIG_NETFRONT
+    resume_netfront(rc);
+#endif
+}
+
+void suspend_core_devices(void)
+{
+    local_irq_disable();
+    
+    suspend_gnttab();
+    
+    suspend_console();
+
+    suspend_time();
+
+    suspend_events();
+
+    arch_suspend_mm();
+}
+
+void resume_core_devices(int err)
+{
+    arch_resume_mm(err);
+    
+    resume_events();
+    
+    resume_console();
+
+    resume_time();
+    
+    resume_gnttab();
+    
+    local_irq_enable();
+
+    if (!err)
+        resume_xenbus(err);
+}
+
+/*static void shutdown_thread(void *p)
 {
     const char *path = "control/shutdown";
     const char *token = path;
@@ -100,12 +147,92 @@ static void shutdown_thread(void *p)
         shutdown_reason = SHUTDOWN_poweroff;
     else if (!strcmp(shutdown, "reboot"))
         shutdown_reason = SHUTDOWN_reboot;
+    else if (!strcmp(shutdown, "suspend"))
+        shutdown_reason = SHUTDOWN_suspend;
     else
-        /* Unknown */
+         Unknown 
         shutdown_reason = SHUTDOWN_crash;
     app_shutdown(shutdown_reason);
     free(shutdown);
+}*/
+static void shutdown_thread(void *p)
+{
+   const char *path = "control/shutdown";
+   const char *token = path;
+   unsigned int shutdown_reason;
+   char *shutdown=NULL;
+   char *err;
+   int rc;
+   unsigned long start_info_mfn = virt_to_mfn(xen_info);
+
+   xenbus_watch_path_token(XBT_NIL, path, token, NULL);
+
+   for(;;)
+   {
+            xenbus_wait_for_watch(NULL);
+
+	    err = xenbus_read(XBT_NIL, path, &shutdown);
+	    if(err)
+	    {
+		printk("Xenbus_read error %s\n", err);
+		free(err);
+	    }
+            if (!strcmp(shutdown, ""))
+	    {
+	        free(shutdown);
+		continue;
+	    }
+	    else if (!strcmp(shutdown, "poweroff"))
+	        shutdown_reason = SHUTDOWN_poweroff;
+	    else if (!strcmp(shutdown, "reboot"))
+	        shutdown_reason = SHUTDOWN_reboot;
+	    else if (!strcmp(shutdown, "suspend"))
+	        shutdown_reason = SHUTDOWN_suspend;
+	    else if (!strcmp(shutdown, "test"))
+		{
+		printk("shutdown reason TEST\n");
+	        shutdown_reason = 15;
+		}
+	    else
+	        /* Unknown */
+	        shutdown_reason = SHUTDOWN_crash;
+
+	    err = xenbus_write(XBT_NIL, path, "");
+	    free(err);
+
+
+	    if(shutdown_reason == SHUTDOWN_poweroff || shutdown_reason == SHUTDOWN_reboot) {
+	    	app_shutdown(shutdown_reason);
+		free(shutdown);
+	    } else if (shutdown_reason ==  SHUTDOWN_suspend) {
+            free(shutdown);
+            suspend_frontends();
+            suspend_core_devices();
+
+            unmap_shared_info();
+            xen_info->store_mfn = machine_to_phys_mapping[xen_info->store_mfn];
+            xen_info->console.domU.mfn = machine_to_phys_mapping[xen_info->console.domU.mfn];
+
+            rc = HYPERVISOR_suspend((unsigned long)start_info_mfn);
+
+            if (rc) {
+                xen_info->store_mfn = pfn_to_mfn(xen_info->store_mfn);
+                xen_info->console.domU.mfn = pfn_to_mfn(xen_info->console.domU.mfn);
+            } else {
+                memcpy(&start_info, xen_info, sizeof(*xen_info));
+            }
+
+            HYPERVISOR_shared_info = map_shared_info(xen_info);
+
+            resume_core_devices(rc);
+            resume_frontends(rc);      
+	    } else {
+		    printk("Who knows?\n");
+        	free(shutdown);
+	    }
+    }
 }
+
 #endif
 
 

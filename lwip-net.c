@@ -76,6 +76,7 @@ static struct netif *the_interface = NULL;
 
 static unsigned char rawmac[6];
 static struct netfront_dev *dev;
+static int netif_suspended = 0;
 
 /* Forward declarations. */
 static err_t netfront_output(struct netif *netif, struct pbuf *p,
@@ -234,7 +235,9 @@ netfront_input(struct netif *netif, unsigned char* data, int len)
 
 void netif_rx(unsigned char* data, int len)
 {
-  if (the_interface != NULL) {
+  /*if (the_interface != NULL && netif_suspended) {
+    tprintk("LWIP: paket arrived while netfront is suspended.\n");
+  } else*/ if (the_interface != NULL && !netif_suspended)  {
     netfront_input(the_interface, data, len);
     wake_up(&netfront_queue);
   }
@@ -382,5 +385,16 @@ void start_networking(void)
 void stop_networking(void)
 {
   if (dev)
-    shutdown_netfront(dev);
+    shutdown_netfront(dev, SHUTDOWN_poweroff);
 }
+
+void suspend_networking(void)
+{
+    netif_suspended = 1;
+}
+
+void resume_networking(void)
+{
+    netif_suspended = 0;
+}
+

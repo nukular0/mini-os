@@ -64,6 +64,7 @@ struct xenbus_req_info
 static struct xenbus_req_info req_info[NR_REQS];
 
 uint32_t xenbus_evtchn;
+static int suspend = 0;
 
 #ifdef CONFIG_PARAVIRT
 void get_xenbus(void *p)
@@ -88,6 +89,7 @@ void get_xenbus(void *p)
 }
 #endif
 
+static char *errmsg(struct xsd_sockmsg *rep);
 static void memcpy_from_ring(const void *Ring,
         void *Dest,
         int off,
@@ -231,8 +233,10 @@ static void xenbus_thread_func(void *ign)
             prod = xenstore_buf->rsp_prod;
             DEBUG("Rsp_cons %d, rsp_prod %d.\n", xenstore_buf->rsp_cons,
                     xenstore_buf->rsp_prod);
-            if (xenstore_buf->rsp_prod - xenstore_buf->rsp_cons < sizeof(msg))
+            if (xenstore_buf->rsp_prod - xenstore_buf->rsp_cons < sizeof(msg)) {
+                notify_remote_via_evtchn(start_info.store_evtchn);
                 break;
+            }
             rmb();
             memcpy_from_ring(xenstore_buf->rsp,
                     &msg,
@@ -243,8 +247,10 @@ static void xenbus_thread_func(void *ign)
                     xenstore_buf->rsp_prod - xenstore_buf->rsp_cons,
                     msg.req_id);
             if (xenstore_buf->rsp_prod - xenstore_buf->rsp_cons <
-                    sizeof(msg) + msg.len)
+                    sizeof(msg) + msg.len) {
+                notify_remote_via_evtchn(start_info.store_evtchn);
                 break;
+            }
 
             DEBUG("Message is good.\n");
 
@@ -370,6 +376,59 @@ void init_xenbus(void)
 
 void fini_xenbus(void)
 {
+}
+
+void suspend_xenbus(void)
+{
+    suspend=1;
+    
+    while (1) {
+        spin_lock(&req_lock);
+        if (nr_live_reqs == 0)
+            break;
+        spin_unlock(&req_lock);
+        wait_event(req_wq, (nr_live_reqs == 0));
+    }
+    mask_evtchn(start_info.store_evtchn);
+    xenstore_buf = NULL;
+    spin_unlock(&req_lock);
+}
+
+void resume_xenbus(int coop)
+{
+    char *msg;
+    struct watch *watch;
+    struct write_req req[2];
+    struct xsd_sockmsg *rep;
+
+    xenstore_buf = mfn_to_virt(start_info.store_mfn);
+    if (xenstore_buf->req_prod != xenstore_buf->req_cons) {
+        printk("request ring is not quiescent (%08x:%08x)! Fixing!\n",
+            xenstore_buf->req_cons, xenstore_buf->req_prod);
+        xenstore_buf->req_cons = xenstore_buf->req_prod;
+    }
+    
+    suspend = 0;
+    
+    unmask_evtchn(start_info.store_evtchn);
+
+    if (!coop) {
+        for (watch = watches; watch; watch = watch->next) {
+            req[0].data = watch->token;
+            req[0].len = strlen(watch->token) + 1;
+            req[1].data = watch->token;
+            req[1].len = strlen(watch->token) + 1;
+            
+            rep = xenbus_msg_reply(XS_WATCH, XBT_NIL, req, ARRAY_SIZE(req));
+            msg = errmsg(rep);
+            if (msg) 
+                xprintk("error on XS_WATCH: %s\n", msg);
+            free(rep);
+        }
+    }
+    
+    notify_remote_via_evtchn(start_info.store_evtchn);
+    wake_up(&req_wq);
 }
 
 /* Send data to xenbus.  This can block.  All of the requests are seen

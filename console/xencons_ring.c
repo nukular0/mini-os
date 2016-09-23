@@ -215,3 +215,7 @@ void xencons_resume(void)
 	(void)xencons_ring_init();
 }
 
+void xencons_suspend(void)
+{
+    unbind_evtchn(start_info.console.domU.evtchn);
+}

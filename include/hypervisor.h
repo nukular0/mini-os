@@ -50,5 +50,6 @@ void unmask_evtchn(uint32_t port);
 void clear_evtchn(uint32_t port);
 
 extern int in_callback;
+extern start_info_t *xen_info;
 
 #endif /* __HYPERVISOR_H__ */

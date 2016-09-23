@@ -66,6 +66,11 @@ struct netfront_dev {
     void (*netif_rx)(unsigned char* data, int len);
 };
 
+struct netfront_dev *net_device;
+unsigned char netfront_suspended = 0;
+
+evtchn_port_t netfront_evtchn = -1;
+
 void init_rx_buffers(struct netfront_dev *dev);
 
 static inline void add_id_to_freelist(unsigned int id,unsigned short* freelist)
@@ -118,7 +123,7 @@ moretodo:
 
         buf = &dev->rx_buffers[id];
         page = (unsigned char*)buf->page;
-        gnttab_end_access(buf->gref);
+        //gnttab_end_access(buf->gref);
 
         if (rx->status > NETIF_RSP_NULL)
         {
@@ -132,9 +137,10 @@ moretodo:
 		dev->rlen = len;
 		/* No need to receive the rest for now */
 		dobreak = 1;
-	    } else
+	    } else {
 #endif
 		dev->netif_rx(page+rx->offset,rx->status);
+        }
         }
     }
     dev->rx.rsp_cons=cons;
@@ -149,11 +155,11 @@ moretodo:
         int id = xennet_rxidx(req_prod + i);
         netif_rx_request_t *req = RING_GET_REQUEST(&dev->rx, req_prod + i);
         struct net_buffer* buf = &dev->rx_buffers[id];
-        void* page = buf->page;
+        //void* page = buf->page;
 
         /* We are sure to have free gnttab entries since they got released above */
-        buf->gref = req->gref = 
-            gnttab_grant_access(dev->dom,virt_to_mfn(page),0);
+        req->gref = buf->gref; /* = 
+            gnttab_grant_access(dev->dom,virt_to_mfn(page),0);*/
 
         req->id = id;
     }
@@ -182,7 +188,7 @@ void network_tx_buf_gc(struct netfront_dev *dev)
         for (cons = dev->tx.rsp_cons; cons != prod; cons++) 
         {
             struct netif_tx_response *txrsp;
-            struct net_buffer *buf;
+            //struct net_buffer *buf;
 
             txrsp = RING_GET_RESPONSE(&dev->tx, cons);
             if (txrsp->status == NETIF_RSP_NULL)
@@ -193,9 +199,9 @@ void network_tx_buf_gc(struct netfront_dev *dev)
 
             id  = txrsp->id;
             BUG_ON(id >= NET_TX_RING_SIZE);
-            buf = &dev->tx_buffers[id];
+            /*buf = &dev->tx_buffers[id];
             gnttab_end_access(buf->gref);
-            buf->gref=GRANT_INVALID_REF;
+            buf->gref=GRANT_INVALID_REF;*/
 
 	    add_id_to_freelist(id,dev->tx_freelist);
 	    up(&dev->tx_sem);
@@ -249,7 +255,7 @@ void netfront_select_handler(evtchn_port_t port, struct pt_regs *regs, void *dat
 }
 #endif
 
-static void free_netfront(struct netfront_dev *dev)
+static void free_netfront(struct netfront_dev *dev, unsigned int reason)
 {
     int i;
 
@@ -264,22 +270,30 @@ static void free_netfront(struct netfront_dev *dev)
     gnttab_end_access(dev->rx_ring_ref);
     gnttab_end_access(dev->tx_ring_ref);
 
-    free_page(dev->rx.sring);
-    free_page(dev->tx.sring);
+    /*free_page(dev->rx.sring);
+    free_page(dev->tx.sring);*/
 
     unbind_evtchn(dev->evtchn);
 
     for(i=0;i<NET_RX_RING_SIZE;i++) {
-	gnttab_end_access(dev->rx_buffers[i].gref);
-	free_page(dev->rx_buffers[i].page);
+	    gnttab_end_access(dev->rx_buffers[i].gref);
+        if (reason != SHUTDOWN_suspend)
+	        free_page(dev->rx_buffers[i].page);
     }
 
-    for(i=0;i<NET_TX_RING_SIZE;i++)
-	if (dev->tx_buffers[i].page)
-	    free_page(dev->tx_buffers[i].page);
+    for(i=0;i<NET_TX_RING_SIZE;i++) {
+	    if (dev->tx_buffers[i].page) {
+            gnttab_end_access(dev->tx_buffers[i].gref);
+            if (reason != SHUTDOWN_suspend)
+	            free_page(dev->tx_buffers[i].page);
+        }
+    }
 
-    free(dev->nodename);
-    free(dev);
+    if (reason != SHUTDOWN_suspend) {
+        free(dev->nodename);
+        free(dev);
+        net_device = NULL;
+    }
 }
 
 struct netfront_dev *init_netfront(char *_nodename, void (*thenetif_rx)(unsigned char* data, int len), unsigned char rawmac[6], char **ip)
@@ -297,6 +311,7 @@ struct netfront_dev *init_netfront(char *_nodename, void (*thenetif_rx)(unsigned
     struct netfront_dev *dev;
     static int netfrontends = 0;
 
+    
     if (!_nodename)
         snprintf(nodename, sizeof(nodename), "device/vif/%d", netfrontends);
     else {
@@ -317,13 +332,17 @@ struct netfront_dev *init_netfront(char *_nodename, void (*thenetif_rx)(unsigned
     dev->fd = -1;
 #endif
 
+    net_device = dev;
     printk("net TX ring size %lu\n", (unsigned long) NET_TX_RING_SIZE);
     printk("net RX ring size %lu\n", (unsigned long) NET_RX_RING_SIZE);
     init_SEMAPHORE(&dev->tx_sem, NET_TX_RING_SIZE);
     for(i=0;i<NET_TX_RING_SIZE;i++)
     {
 	add_id_to_freelist(i,dev->tx_freelist);
-        dev->tx_buffers[i].page = NULL;
+        //dev->tx_buffers[i].page = NULL;
+        dev->tx_buffers[i].page = (char*)alloc_page();
+        dev->tx_buffers[i].gref = gnttab_grant_access(dev->dom,
+                                                virt_to_mfn(dev->tx_buffers[i].page), 1);
     }
 
     for(i=0;i<NET_RX_RING_SIZE;i++)
@@ -340,6 +359,8 @@ struct netfront_dev *init_netfront(char *_nodename, void (*thenetif_rx)(unsigned
     else
 #endif
         evtchn_alloc_unbound(dev->dom, netfront_handler, dev, &dev->evtchn);
+
+    netfront_evtchn = dev->evtchn;
 
     txs = (struct netif_tx_sring *) alloc_page();
     rxs = (struct netif_rx_sring *) alloc_page();
@@ -458,6 +479,7 @@ done:
 
     unmask_evtchn(dev->evtchn);
 
+
         /* Special conversion specifier 'hh' needed for __ia64__. Without
            this mini-os panics with 'Unaligned reference'. */
     if (rawmac)
@@ -473,7 +495,7 @@ done:
 error:
     free(msg);
     free(err);
-    free_netfront(dev);
+    free_netfront(dev, SHUTDOWN_poweroff);
     return NULL;
 }
 
@@ -494,7 +516,214 @@ int netfront_tap_open(char *nodename) {
 }
 #endif
 
-void shutdown_netfront(struct netfront_dev *dev)
+static struct netfront_dev *_init_netfront(struct netfront_dev *dev, unsigned char rawmac[6], char **ip)
+{
+    xenbus_transaction_t xbt;
+    char* err = NULL;
+    char* message=NULL;
+    struct netif_tx_sring *txs;
+    struct netif_rx_sring *rxs;
+    int retry=0;
+    int i;
+    char* msg = NULL;
+    char path[256];
+    //struct timeval tv, tv2;
+
+    snprintf(path, sizeof(path), "%s/backend-id", dev->nodename);
+    dev->dom = xenbus_read_integer(path);
+
+    snprintf(path, sizeof(path), "%s/backend", dev->nodename);
+    msg = xenbus_read(XBT_NIL, path, &dev->backend);
+    snprintf(path, sizeof(path), "%s/mac", dev->nodename);
+    msg = xenbus_read(XBT_NIL, path, &dev->mac);
+    if ((dev->backend == NULL) || (dev->mac == NULL))
+    {
+        printk("%s: backend/mac failed\n", __func__);
+        goto error;
+    }
+   // gettimeofday(&tv, NULL);
+
+    init_SEMAPHORE(&dev->tx_sem, NET_TX_RING_SIZE);
+    for(i=0;i<NET_TX_RING_SIZE;i++)
+    {
+        add_id_to_freelist(i,dev->tx_freelist);
+        //dev->tx_buffers[i].page = (char*)alloc_page();
+        dev->tx_buffers[i].gref = gnttab_grant_access(dev->dom,
+                                                virt_to_mfn(dev->tx_buffers[i].page), 1);
+	//dev->tx_buffers[i].page = NULL;
+    }
+
+    for(i=0;i<NET_RX_RING_SIZE;i++)
+    {
+        //* TODO: that's a lot of memory 
+        //dev->rx_buffers[i].page = (char*)alloc_page();
+    }
+
+#ifdef HAVE_LIBC
+    if (dev->netif_rx == NETIF_SELECT_RX)
+        evtchn_alloc_unbound(dev->dom, netfront_select_handler, dev, &dev->evtchn);
+    else
+#endif
+      evtchn_alloc_unbound(dev->dom, netfront_handler, dev, &dev->evtchn);
+
+    netfront_evtchn = dev->evtchn;
+
+    //printk("After evtchn_alloc ectchn %d\n", dev->evtchn);
+
+    txs = (struct netif_tx_sring *) alloc_page();
+    rxs = (struct netif_rx_sring *) alloc_page();
+    memset(txs,0,PAGE_SIZE);
+    memset(rxs,0,PAGE_SIZE);
+    SHARED_RING_INIT(txs);
+    SHARED_RING_INIT(rxs);
+    FRONT_RING_INIT(&dev->tx, txs, PAGE_SIZE);
+    FRONT_RING_INIT(&dev->rx, rxs, PAGE_SIZE);
+    
+    dev->tx_ring_ref = gnttab_grant_access(dev->dom,virt_to_mfn(txs),0);
+    dev->rx_ring_ref = gnttab_grant_access(dev->dom,virt_to_mfn(rxs),0);
+
+    init_rx_buffers(dev);
+
+    dev->events = NULL;
+
+	i = 0;
+//    gettimeofday(&tv2, NULL);
+ //   printk("Time to init netfront: (s=%ld, us=%ld)\n", tv2.tv_sec-tv.tv_sec, tv2.tv_usec-tv.tv_usec);
+again:
+//    gettimeofday(&tv, NULL);
+	i++;
+    
+    err = xenbus_transaction_start(&xbt);
+    if (err) {
+        printk("starting transaction\n");
+        free(err);
+    }
+
+    err = xenbus_printf(xbt, dev->nodename, "tx-ring-ref","%u",
+                dev->tx_ring_ref);
+    if (err) {
+        message = "writing tx ring-ref";
+        goto abort_transaction;
+    }
+
+    err = xenbus_printf(xbt, dev->nodename, "rx-ring-ref","%u",
+                dev->rx_ring_ref);
+    if (err) {
+        message = "writing rx ring-ref";
+        goto abort_transaction;
+    }
+    err = xenbus_printf(xbt, dev->nodename,
+                "event-channel", "%u", dev->evtchn);
+    if (err) {
+        message = "writing event-channel";
+        goto abort_transaction;
+    }
+
+    err = xenbus_printf(xbt, dev->nodename, "request-rx-copy", "%u", 1);
+
+    if (err) {
+        message = "writing request-rx-copy";
+        goto abort_transaction;
+    }
+
+    snprintf(path, sizeof(path), "%s/state", dev->nodename);
+    err = xenbus_switch_state(xbt, path, XenbusStateConnected);
+    if (err) {
+        message = "switching state";
+        goto abort_transaction;
+    }
+
+    err = xenbus_transaction_end(xbt, 0, &retry);
+    free(err);
+   if (retry) {
+            goto again;
+        printk("completing transaction\n");
+    }
+
+    goto done;
+
+abort_transaction:
+    free(err);
+    err = xenbus_transaction_end(xbt, 1, &retry);
+    printk("Abort transaction %s\n", message);
+    goto error;
+
+done:
+
+    snprintf(path, sizeof(path), "%s/mac", dev->nodename);
+    msg = xenbus_read(XBT_NIL, path, &dev->mac);
+
+    if (dev->mac == NULL) {
+        printk("%s: backend/mac failed\n", __func__);
+        goto error;
+    }
+//    gettimeofday(&tv2, NULL);
+ //   printk("Time for creating xenstore nodes: (s=%ld, us=%ld)\n",tv2.tv_sec-tv.tv_sec,tv2.tv_usec-tv.tv_usec);
+
+//    printk("backend at %s\n",dev->backend);
+//    printk("mac is %s\n",dev->mac);
+
+    {
+        XenbusState state;
+        int retries = 3;
+
+       char path[strlen(dev->backend) + strlen("/state") + 1];
+ //       gettimeofday(&tv, NULL);
+        snprintf(path, sizeof(path), "%s/state", dev->backend);
+
+        xenbus_watch_path_token(XBT_NIL, path, path, &dev->events);
+
+        err = NULL;
+nf_sc_again:
+        state = xenbus_read_integer(path);
+        while (err == NULL && state < XenbusStateConnected) {
+            err = xenbus_wait_for_state_change(path, &state, &dev->events);
+//            printk("*** netfront: still not connected\n");
+        }
+        if (state != XenbusStateConnected) {
+            if (retries > 0) {
+                printk("*** netfront: Couldn't get backend yet. Retrying %i times\n", retries);
+                retries--;
+                goto nf_sc_again;
+            }
+//          printk("backend not avalable, state=%d\n", state);
+            xenbus_unwatch_path_token(XBT_NIL, path, path);
+            goto error;
+        }
+
+        if (ip) {
+            snprintf(path, sizeof(path), "%s/ip", dev->backend);
+            xenbus_read(XBT_NIL, path, ip);
+        }
+    }
+   // gettimeofday(&tv2, NULL);
+   // printk("Time to connect to backend device: (s=%ld, us=%ld)\n", tv2.tv_sec-tv.tv_sec, tv2.tv_usec-tv.tv_usec);
+
+//    printk("**************************\n");
+    unmask_evtchn(dev->evtchn);
+
+        /* Special conversion specifier 'hh' needed for __ia64__. Without
+           this mini-os panics with 'Unaligned reference'. */
+    if (rawmac)
+        sscanf(dev->mac,"%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+            &rawmac[0],
+            &rawmac[1],
+            &rawmac[2],
+            &rawmac[3],
+            &rawmac[4],
+            &rawmac[5]);
+
+    return dev;
+error:
+    free(msg);
+    free(err);
+    free_netfront(dev, SHUTDOWN_poweroff);
+    return NULL;
+}
+
+
+
+void shutdown_netfront(struct netfront_dev *dev, unsigned int reason)
 {
     char* err = NULL, *err2;
     XenbusState state;
@@ -502,7 +731,7 @@ void shutdown_netfront(struct netfront_dev *dev)
     char path[strlen(dev->backend) + strlen("/state") + 1];
     char nodename[strlen(dev->nodename) + strlen("/request-rx-copy") + 1];
 
-    printk("close network: backend at %s\n",dev->backend);
+    //printk("close network: backend at %s\n",dev->backend);
 
     snprintf(path, sizeof(path), "%s/state", dev->backend);
     snprintf(nodename, sizeof(nodename), "%s/state", dev->nodename);
@@ -556,9 +785,21 @@ close:
     free(err2);
 
     if (!err)
-        free_netfront(dev);
+        free_netfront(dev, reason);
 }
 
+void suspend_netfront(void)
+{
+    netfront_suspended = 1;
+    //shutdown_netfront(net_device, SHUTDOWN_suspend);
+}
+
+void resume_netfront(int rc)
+{
+    if (!rc)
+        _init_netfront(net_device, NULL, NULL);
+    netfront_suspended = 0;
+}
 
 void init_rx_buffers(struct netfront_dev *dev)
 {
@@ -619,8 +860,9 @@ void netfront_xmit(struct netfront_dev *dev, unsigned char* data,int len)
 
     memcpy(page,data,len);
 
-    buf->gref = 
-        tx->gref = gnttab_grant_access(dev->dom,virt_to_mfn(page),1);
+    /*buf->gref = 
+        tx->gref = gnttab_grant_access(dev->dom,virt_to_mfn(page),1);*/
+    tx->gref = buf->gref;
 
     tx->offset=0;
     tx->size = len;

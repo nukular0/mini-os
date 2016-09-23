@@ -61,7 +61,7 @@ struct consfront_dev {
 #endif
 };
 
-extern uint32_t console_evtchn;
+//extern uint32_t console_evtchn;
 
 void print(int direct, const char *fmt, va_list args);
 void printk(const char *fmt, ...) __attribute__ ((format (printf, 1, 2)));
@@ -86,5 +86,11 @@ int xencons_ring_send_no_notify(struct consfront_dev *dev, const char *data, uns
 int xencons_ring_avail(struct consfront_dev *dev);
 int xencons_ring_recv(struct consfront_dev *dev, char *data, unsigned len);
 void free_consfront(struct consfront_dev *dev);
+
+void xencons_resume(void);
+void xencons_suspend(void);
+
+#define suspend_console xencons_suspend
+#define resume_console xencons_resume
 
 #endif /* _LIB_CONSOLE_H_ */

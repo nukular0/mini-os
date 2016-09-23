@@ -101,6 +101,7 @@ void schedule(void)
             {
                 next = thread;
                 /* Put this thread on the end of the list */
+		//printk("Current: (name=%s,ip=%lx,sp=%lx,addr=%p), next: %s\n", prev->name, prev->ip, prev->sp, (void*)prev, next->name);
                 MINIOS_TAILQ_REMOVE(&thread_list, thread, thread_list);
                 MINIOS_TAILQ_INSERT_TAIL(&thread_list, thread, thread_list);
                 break;

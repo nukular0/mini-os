@@ -826,11 +826,26 @@ void p2m_chk_pfn(unsigned long pfn)
     }
 }
 
+
+#define L1_P2M_ENTRIES  (1 << L1_P2M_SHIFT)
+#define L2_P2M_ENTRIES  (1 << (L2_P2M_SHIFT - L1_P2M_SHIFT))
+#define L3_P2M_ENTRIES  (1 << (L3_P2M_SHIFT - L2_P2M_SHIFT))
+#define L1_P2M_MASK     (L1_P2M_ENTRIES - 1)
+#define L2_P2M_MASK     (L2_P2M_ENTRIES - 1)
+#define L3_P2M_MASK     (L3_P2M_ENTRIES - 1)
+
+/* Virtual addresses of the l4yyN pages */
+static unsigned long *l3_list;
+static unsigned long *l2_list_pages[512];
+static unsigned long max_pfn_table;
+
 void arch_init_p2m(unsigned long max_pfn)
 {
-    unsigned long *l2_list = NULL, *l3_list;
+    unsigned long *l2_list = NULL;
     unsigned long pfn;
-    
+    int l2_page_number = 0;
+    max_pfn_table = max_pfn;   
+ 
     p2m_chk_pfn(max_pfn - 1);
     l3_list = (unsigned long *)alloc_page(); 
     for ( pfn = 0; pfn < max_pfn; pfn += P2M_ENTRIES )
@@ -838,6 +853,8 @@ void arch_init_p2m(unsigned long max_pfn)
         if ( !(pfn % (P2M_ENTRIES * P2M_ENTRIES)) )
         {
             l2_list = (unsigned long*)alloc_page();
+            l2_list_pages[l2_page_number] = l2_list;
+            l2_page_number++;
             l3_list[L3_P2M_IDX(pfn)] = virt_to_mfn(l2_list);
         }
         l2_list[L2_P2M_IDX(pfn)] = virt_to_mfn(phys_to_machine_mapping + pfn);
@@ -923,4 +940,52 @@ unsigned long map_frame_virt(unsigned long mfn)
         return 0;
 
     return addr;
+}
+
+void arch_suspend_mm(void)
+{
+    int rc;
+    
+    if ( (rc = HYPERVISOR_update_va_mapping(0,
+            __pte((mfn_zero<<L1_PAGETABLE_SHIFT)| L1_PROT), UVMF_INVLPG)) ) {
+                printk("Unable to remap NULL page. rc=%d\n",rc);
+                do_exit();
+    }
+}
+
+void arch_resume_mm(int err)
+{
+    int rc;
+    pte_t nullpte = { };
+
+    /* Remap first page as the CoW zero page */
+    mfn_zero = virt_to_mfn((unsigned long) &_text);
+    if ( (rc = HYPERVISOR_update_va_mapping(0, nullpte, UVMF_INVLPG)) ) {
+        printk("Unable to unmap NULL page. rc=%d\n", rc);
+        do_exit();
+    }
+
+    if (!err)
+        arch_p2m_rebuild();
+}
+
+void arch_p2m_rebuild()
+{
+    unsigned long *l2_list = NULL;
+    unsigned long pfn;
+    int l2_page_number = 0;
+
+    for ( pfn=0; pfn<max_pfn_table; pfn += L1_P2M_ENTRIES ) {
+        if ( !(pfn % (L1_P2M_ENTRIES * L2_P2M_ENTRIES)) ) {
+            l2_list = l2_list_pages[l2_page_number];
+            l2_page_number++;
+            l3_list[(pfn >> L2_P2M_SHIFT)] = virt_to_mfn(l2_list);
+        }
+        l2_list[(pfn >> L1_P2M_SHIFT) & L2_P2M_MASK] = virt_to_mfn(&(phys_to_machine_mapping[pfn]));
+    }
+    
+    HYPERVISOR_shared_info->arch.pfn_to_mfn_frame_list_list = virt_to_mfn(l3_list);
+    HYPERVISOR_shared_info->arch.max_pfn = max_pfn_table;
+
+    printk("max_pfn_table: %lu, l3_list %p (VA), 0x%lx (mfn)\n", max_pfn_table, l3_list, virt_to_mfn(l3_list));
 }

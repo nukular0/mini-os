@@ -521,6 +521,48 @@ void shutdown_frontends(void)
 #endif
 }
 
+void suspend_frontends(void)
+{
+#ifdef CONFIG_NETFRONT
+    suspend_netfront();
+#endif
+}
+
+void suspend_core_devices(void)
+{
+    suspend_xenbus();
+    
+    local_irq_disable();
+    
+    suspend_gnttab();
+    
+    suspend_console();
+
+    suspend_time();
+
+    suspend_evtchn();
+
+    arch_suspend_mm();
+}
+
+void resume_core_device(int err)
+{
+    arch_resume_mm(err);
+    
+    resume_evtchn();
+
+    resume_time();
+
+    resume_console();
+
+    resume_gnttab();
+    
+    local_irq_enable();
+    
+    resume_xenbus();
+}
+
+
 #ifdef CONFIG_XENBUS
 void app_shutdown(unsigned reason)
 {
@@ -535,6 +577,9 @@ static void shutdown_thread(void *p)
 {
     DEFINE_WAIT(w);
 
+    unsigned long start_info_mfsn = virt_to_mfn(xen_info);
+    int err;
+
     while (1) {
         add_waiter(w, shutdown_queue);
         rmb();
@@ -546,9 +591,32 @@ static void shutdown_thread(void *p)
         remove_waiter(w, shutdown_queue);
     }
 
-    shutdown_frontends();
+    if (shutdown_reason == SHUTDOWN_suspend) {
+        suspend_frontends();
+        suspend_core_devices();
+    
+        unmap_shared_info();
+        xen_info->store_mfn = machine_to_phys_mapping[xen_info->store_mfn];
+        xen_info->console.domU.mfn = machine_to_phys_mapping[xen_info->console.domU.mfn];
+        
+        err = HYPERVISOR_suspend((unsigned long)start_info_mfn);
 
-    HYPERVISOR_shutdown(shutdown_reason);
+        if (err) {
+            xen_info->store_mfn = pfn_to_mfn(xen_info->store_mfn);
+            xen_info->console.domU.mfn = pfn_to_mfn(xen_info->console.domU.mfn);
+        } else {
+            memcpy(&start_info, xen_info, sizeof(*xen_info));
+        }
+        
+        HYPERVISOR_shared_info = map_shared_info(xen_info->shared_info);
+
+        resume_core_devices();
+        resume_frontends();        
+    } else {
+        shutdown_frontends();
+
+        HYPERVISOR_shutdown(shutdown_reason);
+    }
 }
 #endif
 

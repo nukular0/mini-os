@@ -68,6 +68,9 @@ static __inline__ int get_order(unsigned long size)
 
 void arch_init_demand_mapping_area(void);
 void arch_init_mm(unsigned long* start_pfn_p, unsigned long* max_pfn_p);
+void arch_suspend_mm(void);
+void arch_resume_mm(int err);
+void arch_p2m_rebuild(void);
 
 unsigned long allocate_ondemand(unsigned long n, unsigned long alignment);
 /* map f[i*stride]+i*increment for i in 0..n-1, aligned on alignment pages */

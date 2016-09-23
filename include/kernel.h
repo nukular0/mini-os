@@ -9,4 +9,6 @@ void do_exit(void) __attribute__((noreturn));
 void arch_do_exit(void);
 void stop_kernel(void);
 
+void unmap_shared_info(void);
+
 #endif /* _KERNEL_H_ */

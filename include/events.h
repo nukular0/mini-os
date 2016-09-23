@@ -22,6 +22,7 @@
 #include<mini-os/traps.h>
 #include<xen/event_channel.h>
 
+extern evtchn_port_t netfront_evtchn; 
 typedef void (*evtchn_handler_t)(evtchn_port_t, struct pt_regs *, void *);
 
 /* prototypes */
@@ -55,5 +56,7 @@ static inline int notify_remote_via_evtchn(evtchn_port_t port)
 }
 
 void fini_events(void);
+void suspend_events(void);
+void resume_events(void);
 
 #endif /* _EVENTS_H_ */

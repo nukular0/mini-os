@@ -46,6 +46,7 @@ union start_info_union start_info_union;
  * Events flags go here, for example.
  */
 shared_info_t *HYPERVISOR_shared_info;
+start_info_t *xen_info;
 
 /*
  * Just allocate the kernel stack here. SS:ESP is set up to point here
@@ -103,6 +104,7 @@ static void get_cmdline(void *p)
 static void print_start_of_day(void *p)
 {
     start_info_t *si = p;
+    xen_info = si;
 
     printk("Xen Minimal OS (pv)!\n");
     printk("  start_info: %p(VA)\n", si);
@@ -221,4 +223,17 @@ void
 arch_do_exit(void)
 {
 	stack_walk();
+}
+
+void unmap_shared_info(void)
+{
+
+//HYPERVISOR_update_va_mapping((unsigned long)HYPERVISOR_shared_info,
+//            __pte((virt_to_mfn(shared_info)<<L1_PAGETABLE_SHIFT)| L1_PROT), UVMF_INVLPG); 
+
+    BUG_ON(HYPERVISOR_update_va_mapping(
+                (uintptr_t)HYPERVISOR_shared_info,
+                __pte((virt_to_mfn(shared_info)<<L1_PAGETABLE_SHIFT)| L1_PROT), UVMF_INVLPG));
+
+
 }

@@ -13,5 +13,7 @@ int gnttab_end_access(grant_ref_t ref);
 const char *gnttabop_error(int16_t status);
 void fini_gnttab(void);
 grant_entry_t *arch_init_gnttab(int nr_grant_frames);
+void resume_gnttab(void);
+void suspend_gnttab(void);
 
 #endif /* !__GNTTAB_H__ */

@@ -14,6 +14,7 @@ ELFNOTE(Xen, XEN_ELFNOTE_GUEST_OS, .asciz "Mini-OS")
 ELFNOTE(Xen, XEN_ELFNOTE_LOADER, .asciz "generic")
 ELFNOTE(Xen, XEN_ELFNOTE_HYPERCALL_PAGE, _WORD hypercall_page)
 ELFNOTE(Xen, XEN_ELFNOTE_XEN_VERSION, .asciz "xen-3.0")
+ELFNOTE(Xen, XEN_ELFNOTE_SUSPEND_CANCEL, .byte 1)
 .text
 
 .globl _start

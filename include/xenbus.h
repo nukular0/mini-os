@@ -10,6 +10,8 @@ typedef unsigned long xenbus_transaction_t;
 /* Initialize the XenBus system. */
 void init_xenbus(void);
 void get_xenbus(void *p);
+void suspend_xenbus(void);
+void resume_xenbus(int coop);
 #else
 static inline void init_xenbus(void)
 {

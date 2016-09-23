@@ -448,7 +448,7 @@ int close(int fd)
 #endif
 #ifdef CONFIG_NETFRONT
 	case FTYPE_TAP:
-	    shutdown_netfront(files[fd].tap.dev);
+	    shutdown_netfront(files[fd].tap.dev,SHUTDOWN_poweroff);
 	    files[fd].type = FTYPE_NONE;
 	    return 0;
 #endif

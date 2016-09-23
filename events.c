@@ -22,8 +22,11 @@
 #include <mini-os/events.h>
 #include <mini-os/lib.h>
 #include <xen/xsm/flask_op.h>
+#include <mini-os/time.h>
 
 #define NR_EVS 1024
+
+extern uint32_t console_evtchn;
 
 /* this represents a event handler. Chaining or sharing is not allowed */
 typedef struct _ev_action_t {
@@ -46,13 +49,20 @@ void unbind_all_ports(void)
 
     for ( i = 0; i < NR_EVS; i++ )
     {
-        if ( i == console_evtchn || i == xenbus_evtchn )
+        if ( i == console_evtchn || i == xenbus_evtchn || i == netfront_evtchn )
             continue;
 
         if ( test_and_clear_bit(i, bound_ports) )
         {
-            printk("port %d still bound!\n", i);
-	    unbind_evtchn(i);
+            struct evtchn_close close;
+            
+            mask_evtchn(i);
+            close.port = i;
+            
+            HYPERVISOR_event_channel_op(EVTCHNOP_close, &close);
+            clear_evtchn(i);
+            //printk("port %d still bound!\n", i);
+	        //unbind_evtchn(i);
         }
     }
     vcpu_info->evtchn_upcall_pending = 0;
@@ -87,9 +97,9 @@ int do_event(evtchn_port_t port, struct pt_regs *regs)
 evtchn_port_t bind_evtchn(evtchn_port_t port, evtchn_handler_t handler,
 						  void *data)
 {
- 	if ( ev_actions[port].handler != default_handler )
+ 	/*if ( ev_actions[port].handler != default_handler )
         printk("WARN: Handler for port %d already registered, replacing\n",
-               port);
+               port);*/
 
 	ev_actions[port].data = data;
 	wmb();
@@ -104,8 +114,8 @@ void unbind_evtchn(evtchn_port_t port )
     struct evtchn_close close;
     int rc;
 
-    if ( ev_actions[port].handler == default_handler )
-        printk("WARN: No handler for port %d when unbinding\n", port);
+    /*if ( ev_actions[port].handler == default_handler )
+        printk("WARN: No handler for port %d when unbinding\n", port);*/
     mask_evtchn(port);
     clear_evtchn(port);
 
@@ -256,6 +266,16 @@ int evtchn_get_peercontext(evtchn_port_t local_port, char *ctx, int size)
     return rc;
 }
 
+void suspend_events(void)
+{
+    xprintk("Suspending event channels\n");
+    unbind_all_ports();
+}
+
+void resume_events(void)
+{ 
+    init_time();
+}
 
 /*
  * Local variables:

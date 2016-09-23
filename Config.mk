@@ -153,11 +153,11 @@ LDFLAGS-$(clang) += -plugin LLVMgold.so
 endif
 
 # Configuration defaults
-ifeq ($(TARGET_ARCH_FAM),x86)
+#ifeq ($(TARGET_ARCH_FAM),x86)
 CONFIG_PARAVIRT ?= y
-else
+#else
 CONFIG_PARAVIRT ?= n
-endif
+#endif
 CONFIG_START_NETWORK ?= y
 CONFIG_SPARSE_BSS ?= y
 CONFIG_QEMU_XS_ARGS ?= n
