@@ -45,7 +45,7 @@ void exit_thread(void) __attribute__((noreturn));
 void schedule(void);
 
 #ifdef __INSIDE_MINIOS__
-#define current get_current()
+//#define current get_current()
 #endif
 
 void wake(struct thread *thread);

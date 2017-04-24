@@ -3,13 +3,16 @@
 
 #include "arch_limits.h"
 
+struct thread* current;
+
 static inline struct thread* get_current(void)
 {
-    struct thread **current;
+/*    struct thread **current;
     unsigned long sp;
     __asm__ __volatile__ ("mov %0, sp":"=r"(sp));
     current = (void *)(unsigned long)(sp & ~(__STACK_SIZE-1));
-    return *current;
+    return *current;*/
+    return current;
 }
 
 void __arch_switch_threads(unsigned long *prevctx, unsigned long *nextctx);

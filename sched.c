@@ -117,6 +117,7 @@ void schedule(void)
     local_irq_restore(flags);
     /* Interrupting the switch is equivalent to having the next thread
        inturrupted at the return instruction. And therefore at safe point. */
+    current = next;
     if(prev != next) switch_threads(prev, next);
 
     MINIOS_TAILQ_FOREACH_SAFE(thread, &exited_threads, thread_list, tmp)
@@ -244,6 +245,7 @@ void init_sched(void)
     _REENT_INIT_PTR((&callback_reent))
 #endif
     idle_thread = create_thread("Idle", idle_thread_fn, NULL);
+    current = idle_thread;
 }
 
 /*

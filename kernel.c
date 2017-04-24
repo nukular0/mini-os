@@ -49,6 +49,9 @@
 
 uint8_t xen_features[XENFEAT_NR_SUBMAPS * 32];
 char cmdline[MAX_CMDLINE_SIZE];
+evtchn_port_t suspend_evtchn;
+
+void do_suspend(void);
 
 void setup_xen_features(void)
 {
@@ -91,7 +94,6 @@ void resume_frontends(int rc)
 
 void suspend_core_devices(void)
 {
-    local_irq_disable();
     
     suspend_gnttab();
     
@@ -99,6 +101,8 @@ void suspend_core_devices(void)
 
     suspend_time();
 
+    local_irq_disable();
+    
     suspend_events();
 
     arch_suspend_mm();
@@ -110,18 +114,78 @@ void resume_core_devices(int err)
     
     resume_events();
     
+    local_irq_enable();
+    
     resume_console();
 
     resume_time();
     
     resume_gnttab();
     
-    local_irq_enable();
 
     if (!err)
         resume_xenbus(err);
 }
 
+void suspend_handler(evtchn_port_t port, struct pt_regs *regs, void *data)
+{
+    //int flags;
+    printk("Suspend Handler called via event channel!\n");
+    notify_remote_via_evtchn(suspend_evtchn);
+    //local_irq_save(flags);
+    local_irq_enable();
+    do_suspend(); // Where do you want to crash today?
+    //local_irq_restore(flags);
+}
+
+void setup_suspend_evtchn(void)
+{
+    char msg[3];
+
+    evtchn_alloc_unbound(0, suspend_handler, NULL, &suspend_evtchn);
+    
+    snprintf(msg, sizeof(msg), "%u", suspend_evtchn);
+    xenbus_write(XBT_NIL, "device/suspend/event-channel", msg);
+
+    unmask_evtchn(suspend_evtchn);
+}
+
+
+void do_suspend(void)
+{
+            unsigned long start_info_mfn = virt_to_mfn(xen_info);
+            int rc;
+            struct timeval tv_start, tv_end;
+
+            gettimeofday(&tv_start, NULL);            
+
+            suspend_frontends();
+            suspend_core_devices();
+
+
+            //unbind_evtchn(suspend_evtchn);
+            unmap_shared_info();
+            xen_info->store_mfn = machine_to_phys_mapping[xen_info->store_mfn];
+            xen_info->console.domU.mfn = machine_to_phys_mapping[xen_info->console.domU.mfn];
+
+            rc = HYPERVISOR_suspend((unsigned long)start_info_mfn);
+
+            if (rc) {
+                xen_info->store_mfn = pfn_to_mfn(xen_info->store_mfn);
+                xen_info->console.domU.mfn = pfn_to_mfn(xen_info->console.domU.mfn);
+                //bind_evtchn(suspend_evtchn, suspend_handler, NULL);
+            } else {
+                memcpy(&start_info, xen_info, sizeof(*xen_info));
+                //unbind_evtchn(suspend_evtchn);
+            }
+
+            HYPERVISOR_shared_info = map_shared_info(xen_info);
+
+            resume_core_devices(rc);
+            resume_frontends(rc);  
+            gettimeofday(&tv_end, NULL);
+            printk(">> Suspend delay time: (s=%ld,us=%ld)", tv_end.tv_sec-tv_start.tv_sec, tv_end.tv_usec-tv_start.tv_usec);
+}
 /*static void shutdown_thread(void *p)
 {
     const char *path = "control/shutdown";
@@ -152,6 +216,7 @@ void resume_core_devices(int err)
     else
          Unknown 
         shutdown_reason = SHUTDOWN_crash;
+evtchn_port_t suspend_evtchn;
     app_shutdown(shutdown_reason);
     free(shutdown);
 }*/
@@ -162,10 +227,9 @@ static void shutdown_thread(void *p)
    unsigned int shutdown_reason;
    char *shutdown=NULL;
    char *err;
-   int rc;
-   unsigned long start_info_mfn = virt_to_mfn(xen_info);
 
    xenbus_watch_path_token(XBT_NIL, path, token, NULL);
+   setup_suspend_evtchn();
 
    for(;;)
    {
@@ -206,26 +270,7 @@ static void shutdown_thread(void *p)
 		free(shutdown);
 	    } else if (shutdown_reason ==  SHUTDOWN_suspend) {
             free(shutdown);
-            suspend_frontends();
-            suspend_core_devices();
-
-            unmap_shared_info();
-            xen_info->store_mfn = machine_to_phys_mapping[xen_info->store_mfn];
-            xen_info->console.domU.mfn = machine_to_phys_mapping[xen_info->console.domU.mfn];
-
-            rc = HYPERVISOR_suspend((unsigned long)start_info_mfn);
-
-            if (rc) {
-                xen_info->store_mfn = pfn_to_mfn(xen_info->store_mfn);
-                xen_info->console.domU.mfn = pfn_to_mfn(xen_info->console.domU.mfn);
-            } else {
-                memcpy(&start_info, xen_info, sizeof(*xen_info));
-            }
-
-            HYPERVISOR_shared_info = map_shared_info(xen_info);
-
-            resume_core_devices(rc);
-            resume_frontends(rc);      
+            do_suspend();
 	    } else {
 		    printk("Who knows?\n");
         	free(shutdown);
@@ -270,6 +315,7 @@ void start_kernel(void)
  
     /* Init XenBus */
     init_xenbus();
+
 
 #ifdef CONFIG_XENBUS
     create_thread("shutdown", shutdown_thread, NULL);

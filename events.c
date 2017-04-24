@@ -49,7 +49,11 @@ void unbind_all_ports(void)
 
     for ( i = 0; i < NR_EVS; i++ )
     {
-        if ( i == console_evtchn || i == xenbus_evtchn || i == netfront_evtchn )
+        #ifdef CONFIG_NETFRONT
+        if ( i == console_evtchn || i == xenbus_evtchn || i == netfront_evtchn || i == suspend_evtchn )
+        #else
+        if ( i == console_evtchn || i == xenbus_evtchn || i == suspend_evtchn )
+        #endif
             continue;
 
         if ( test_and_clear_bit(i, bound_ports) )

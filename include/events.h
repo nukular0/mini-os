@@ -22,7 +22,8 @@
 #include<mini-os/traps.h>
 #include<xen/event_channel.h>
 
-extern evtchn_port_t netfront_evtchn; 
+extern evtchn_port_t netfront_evtchn;
+extern evtchn_port_t suspend_evtchn; 
 typedef void (*evtchn_handler_t)(evtchn_port_t, struct pt_regs *, void *);
 
 /* prototypes */
