@@ -270,21 +270,21 @@ static void free_netfront(struct netfront_dev *dev, unsigned int reason)
     gnttab_end_access(dev->rx_ring_ref);
     gnttab_end_access(dev->tx_ring_ref);
 
-    free_page(dev->rx.sring);
-    free_page(dev->tx.sring);
+    /*free_page(dev->rx.sring);
+    free_page(dev->tx.sring);*/
 
     unbind_evtchn(dev->evtchn);
 
     for(i=0;i<NET_RX_RING_SIZE;i++) {
 	    gnttab_end_access(dev->rx_buffers[i].gref);
-        //if (reason != SHUTDOWN_suspend)
+        if (reason != SHUTDOWN_suspend)
 	        free_page(dev->rx_buffers[i].page);
     }
 
     for(i=0;i<NET_TX_RING_SIZE;i++) {
 	    if (dev->tx_buffers[i].page) {
             gnttab_end_access(dev->tx_buffers[i].gref);
-            //if (reason != SHUTDOWN_suspend)
+            if (reason != SHUTDOWN_suspend)
 	            free_page(dev->tx_buffers[i].page);
         }
     }
@@ -547,7 +547,7 @@ static struct netfront_dev *_init_netfront(struct netfront_dev *dev, unsigned ch
     for(i=0;i<NET_TX_RING_SIZE;i++)
     {
         add_id_to_freelist(i,dev->tx_freelist);
-        dev->tx_buffers[i].page = (char*)alloc_page();
+        //dev->tx_buffers[i].page = (char*)alloc_page();
         dev->tx_buffers[i].gref = gnttab_grant_access(dev->dom,
                                                 virt_to_mfn(dev->tx_buffers[i].page), 1);
 	//dev->tx_buffers[i].page = NULL;
@@ -556,7 +556,7 @@ static struct netfront_dev *_init_netfront(struct netfront_dev *dev, unsigned ch
     for(i=0;i<NET_RX_RING_SIZE;i++)
     {
         //* TODO: that's a lot of memory 
-        dev->rx_buffers[i].page = (char*)alloc_page();
+        //dev->rx_buffers[i].page = (char*)alloc_page();
     }
 
 #ifdef HAVE_LIBC
