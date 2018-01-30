@@ -43,13 +43,16 @@
 #include <mini-os/fbfront.h>
 #include <mini-os/pcifront.h>
 #include <mini-os/xmalloc.h>
+#include <mini-os/semaphore.h>
 #include <fcntl.h>
 #include <xen/features.h>
 #include <xen/version.h>
 
 uint8_t xen_features[XENFEAT_NR_SUBMAPS * 32];
 char cmdline[MAX_CMDLINE_SIZE];
+
 evtchn_port_t suspend_evtchn;
+struct semaphore suspend_sem;
 
 void do_suspend(void);
 
@@ -94,7 +97,8 @@ void resume_frontends(int rc)
 
 void suspend_core_devices(void)
 {
-    
+    suspend_xenbus();   
+ 
     suspend_gnttab();
     
     suspend_console();
@@ -122,20 +126,16 @@ void resume_core_devices(int err)
     
     resume_gnttab();
     
-
     if (!err)
         resume_xenbus(err);
 }
 
 void suspend_handler(evtchn_port_t port, struct pt_regs *regs, void *data)
 {
-    //int flags;
     printk("Suspend Handler called via event channel!\n");
     notify_remote_via_evtchn(suspend_evtchn);
-    //local_irq_save(flags);
     local_irq_enable();
-    do_suspend(); // Where do you want to crash today?
-    //local_irq_restore(flags);
+    up(&suspend_sem);
 }
 
 void setup_suspend_evtchn(void)
@@ -150,6 +150,16 @@ void setup_suspend_evtchn(void)
     unmask_evtchn(suspend_evtchn);
 }
 
+void suspend_thread_func(void *p)
+{
+    init_SEMAPHORE(&suspend_sem, 0);
+    setup_suspend_evtchn();
+    
+    while (1) {
+        down(&suspend_sem);
+        do_suspend();
+    }
+}
 
 void do_suspend(void)
 {
@@ -229,11 +239,10 @@ static void shutdown_thread(void *p)
    char *err;
 
    xenbus_watch_path_token(XBT_NIL, path, token, NULL);
-   setup_suspend_evtchn();
 
    for(;;)
    {
-            xenbus_wait_for_watch(NULL);
+        xenbus_wait_for_watch(NULL);
 
 	    err = xenbus_read(XBT_NIL, path, &shutdown);
 	    if(err)
@@ -264,13 +273,9 @@ static void shutdown_thread(void *p)
 	    err = xenbus_write(XBT_NIL, path, "");
 	    free(err);
 
-
 	    if(shutdown_reason == SHUTDOWN_poweroff || shutdown_reason == SHUTDOWN_reboot) {
 	    	app_shutdown(shutdown_reason);
-		free(shutdown);
-	    } else if (shutdown_reason ==  SHUTDOWN_suspend) {
-            free(shutdown);
-            do_suspend();
+		    free(shutdown);
 	    } else {
 		    printk("Who knows?\n");
         	free(shutdown);
@@ -304,6 +309,7 @@ void start_kernel(void)
     /* Init time and timers. */
     init_time();
 
+    
     /* Init the console driver. */
     init_console();
 
@@ -319,6 +325,7 @@ void start_kernel(void)
 
 #ifdef CONFIG_XENBUS
     create_thread("shutdown", shutdown_thread, NULL);
+    create_thread("suspend", suspend_thread_func, NULL);
 #endif
 
     /* Call (possibly overridden) app_main() */
