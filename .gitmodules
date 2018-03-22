@@ -1,0 +1,3 @@
+[submodule "xen-pvdrivers"]
+	path = xen-pvdrivers
+	url = git@bitbucket.org:nukular0/xen-pvdrivers.git
