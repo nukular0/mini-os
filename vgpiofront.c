@@ -29,7 +29,7 @@
 #include <mini-os/wait.h>
 #include <mini-os/gnttab.h>
 #include <xen/io/xenbus.h>
-#include <mini-os/mydevicefront.h>
+#include <vgpiofront.h>
 #include <mini-os/lib.h>
 #include <fcntl.h>
 

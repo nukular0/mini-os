@@ -19,7 +19,7 @@
 #include <mini-os/netfront.h>
 #include <mini-os/lib.h>
 #include <mini-os/semaphore.h>
-#include <mini-os/mydevicefront.h>
+#include <vgpiofront.h>
 
 
 
@@ -31,16 +31,19 @@ int running = 1;
 void run_client(void *p)
 {
 	uint64_t t1 = 0, t2 = 0, us = 0, ns = 0;
-	struct vgpiofront_dev* gpio;
+	struct vgpiofront_dev *gpio;
 	//~ struct netfront_dev* net;
-    tprintk("Drivertest\n");
+    tprintk("Drivertest!\n");
+    
  
 	gpio = init_vgpiofront("device/vgpio/0");
+	//~ gpio2 = init_vgpiofront("device/vgpio/1");
 	//~ net = init_netfront(NULL, NULL, NULL, NULL);
     
 	tprintk("Drivertest running!\n");
 	
 	shutdown_vgpiofront(gpio);
+	//shutdown_vgpiofront(gpio2);
     while (running == 1) {
 		t1 = NOW();
         t2 = NOW();
