@@ -2,10 +2,7 @@
 #include <mini-os/os.h>
 #include <xmalloc.h>
 #include <console.h>
-//#include <netfront.h>
 #include <lwip/api.h>
-
-//#include <xen/xen.h>       /* We are doing something with Xen */
 #include <mini-os/xenbus.h>
 
 #include <mini-os/os.h>
@@ -28,10 +25,13 @@ unsigned cycles_low, cycles_high, cycles_low1, cycles_high1;
 unsigned long start_ts, end_ts;
 int running = 1;
 
+struct vgpiofront_dev *gpio;
+//~ struct vgpiofront_dev *gpio2;
+
 void run_client(void *p)
 {
 	uint64_t t1 = 0, t2 = 0, us = 0, ns = 0;
-	struct vgpiofront_dev *gpio;
+	
 	//~ struct netfront_dev* net;
     tprintk("Drivertest!\n");
     
@@ -42,24 +42,33 @@ void run_client(void *p)
     
 	tprintk("Drivertest running!\n");
 	
-	shutdown_vgpiofront(gpio);
-	//shutdown_vgpiofront(gpio2);
+	
+	
     while (running == 1) {
 		t1 = NOW();
+        vgpiofront_send(gpio);
         t2 = NOW();
         us = (t2-t1)/1000;
         ns = (t2-t1) - (us*1000);
         tprintk("Elapsed: %lu,%luus\n", us,ns);
-        msleep(10000);
-        //vgpiofront_send(gpio);
+        msleep(200);
+        //~ msleep(1500);
+        //~ vgpiofront_send(gpio2);
     }
-    
-    
-    
+    shutdown_vgpiofront(gpio);
     do_exit();
 }
 
-
+#ifdef CONFIG_XENBUS
+void app_shutdown(unsigned reason)
+{
+	shutdown_vgpiofront(gpio);
+	//~ shutdown_vgpiofront(gpio2);
+    struct sched_shutdown sched_shutdown = { .reason = reason };
+    printk("Drivertest is shutting down: %d\n", reason);
+    HYPERVISOR_sched_op(SCHEDOP_shutdown, &sched_shutdown);
+}
+#endif
 
 int app_main(void *p)
 {
