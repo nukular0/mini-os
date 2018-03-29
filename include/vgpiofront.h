@@ -21,7 +21,7 @@
 struct vgpio_request {
 	unsigned cmd;
 	unsigned pin;
-	unsigned value; 
+	unsigned val; 
 };
 typedef struct vgpio_request vgpio_request_t;
 
@@ -62,15 +62,15 @@ struct vgpiofront_dev* init_vgpiofront(const char* nodename);
 void shutdown_vgpiofront(struct vgpiofront_dev* dev);
 
 
-int vgpiofront_send(struct vgpiofront_dev* dev);
+int vgpiofront_send_request(struct vgpiofront_dev* dev, vgpio_request_t req);
 
-int gpio_request(unsigned gpio, const char *label);
-int gpio_free(unsigned gpio);
-int gpio_direction_input(unsigned gpio);
-int gpio_direction_output(unsigned gpio, int value);
-int gpio_set_debounce(unsigned gpio, unsigned debounce);
-int gpio_get_value(unsigned gpio);
-void gpio_set_value(unsigned gpio, int value);
+int gpio_request(struct vgpiofront_dev *dev, unsigned gpio, const char *label);
+void gpio_free(struct vgpiofront_dev *dev, unsigned gpio);
+int gpio_direction_input(struct vgpiofront_dev *dev, unsigned gpio);
+int gpio_direction_output(struct vgpiofront_dev *dev, unsigned gpio, int value);
+int gpio_set_debounce(struct vgpiofront_dev *dev, unsigned gpio, unsigned debounce);
+int gpio_get_value(struct vgpiofront_dev *dev, unsigned gpio);
+void gpio_set_value(struct vgpiofront_dev *dev, unsigned gpio, int value);
 
 
 #endif

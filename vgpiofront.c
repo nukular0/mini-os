@@ -38,20 +38,18 @@ static void free_vgpiofront(struct vgpiofront_dev *dev)
     free(dev);
 }
 
-int vgpiofront_send(struct vgpiofront_dev* dev){
+int vgpiofront_send_request(struct vgpiofront_dev* dev, vgpio_request_t req){
 	RING_IDX i;
-	vgpio_request_t *req;
+	vgpio_request_t *_req;
 	int notify;
 	int err;
 	
 	//~ VGPIOFRONT_LOG("sending...");
 	if(dev->state == XenbusStateConnected){
-		//~ printk("on device %s, via evtchn %u\n", dev->nodename, dev->evtchn);
+		printk("on device %s, via evtchn %u\n", dev->nodename, dev->evtchn);
 		i = dev->ring.req_prod_pvt;
-		req = RING_GET_REQUEST(&dev->ring, i);
-		req->cmd = 1;
-		req->pin = 2;
-		req->value = 3;
+		_req = RING_GET_REQUEST(&dev->ring, i);
+		memcpy(_req, &req, sizeof(req));
 		dev->ring.req_prod_pvt = i + 1;
 
 		wmb();
@@ -62,7 +60,7 @@ int vgpiofront_send(struct vgpiofront_dev* dev){
 			t1 = NOW();
 		}
 		down(&dev->sem);
-		//~ VGPIOFRONT_LOG("Sent! (%d)\n", err);
+		VGPIOFRONT_LOG("Sent! (%d)\n", err);
 	}
 	else{
 		printk("error: not connected");
@@ -412,37 +410,68 @@ void shutdown_vgpiofront(struct vgpiofront_dev* dev)
    free_vgpiofront(dev);
 }
 
-int gpio_request(unsigned gpio, const char *label)
+int gpio_request(struct vgpiofront_dev *dev, unsigned gpio, const char *label)
 {
-	
+	vgpio_request_t req = {
+		.cmd = CMD_GPIO_REQUEST,
+		.pin = gpio,
+	};
+	return vgpiofront_send_request(dev, req);
 }
-int gpio_free(unsigned gpio)
+void gpio_free(struct vgpiofront_dev *dev, unsigned gpio)
 {
-	
-}
-
-int gpio_direction_input(unsigned gpio)
-{
-	
-}
-
-int gpio_direction_output(unsigned gpio, int value)
-{
-	
+	vgpio_request_t req = {
+		.cmd = CMD_GPIO_FREE,
+		.pin = gpio,
+	};
+	vgpiofront_send_request(dev, req);
 }
 
-int gpio_set_debounce(unsigned gpio, unsigned debounce)
+int gpio_direction_input(struct vgpiofront_dev *dev, unsigned gpio)
 {
-	
+	vgpio_request_t req = {
+		.cmd = CMD_GPIO_DIRECTION_INPUT,
+		.pin = gpio,
+	};
+	return vgpiofront_send_request(dev, req);
 }
 
-int gpio_get_value(unsigned gpio)
+int gpio_direction_output(struct vgpiofront_dev *dev, unsigned gpio, int value)
 {
-	
+	vgpio_request_t req = {
+		.cmd = CMD_GPIO_DIRECTION_OUTPUT,
+		.pin = gpio,
+		.val = value,
+	};
+	return vgpiofront_send_request(dev, req);
 }
 
-void gpio_set_value(unsigned gpio, int value)
+int gpio_set_debounce(struct vgpiofront_dev *dev, unsigned gpio, unsigned debounce)
 {
-	
+	vgpio_request_t req = {
+		.cmd = CMD_GPIO_SET_DEBOUNCE,
+		.pin = gpio,
+		.val = debounce,
+	};
+	return vgpiofront_send_request(dev, req);
+}
+
+int gpio_get_value(struct vgpiofront_dev *dev, unsigned gpio)
+{
+	vgpio_request_t req = {
+		.cmd = CMD_GPIO_GET_VALUE,
+		.pin = gpio,
+	};
+	return vgpiofront_send_request(dev, req);
+}
+
+void gpio_set_value(struct vgpiofront_dev *dev, unsigned gpio, int value)
+{
+	vgpio_request_t req = {
+		.cmd = CMD_GPIO_SET_VALUE,
+		.pin = gpio,
+		.val = value,
+	};
+	vgpiofront_send_request(dev, req);
 }
 
