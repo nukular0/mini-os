@@ -66,7 +66,9 @@ int vgpiofront_send_request(struct vgpiofront_dev* dev, vgpio_request_t req){
 		printk("error: not connected");
 		return -1;
 	}
-	return err;
+	int _ret = dev->last_response.ret;
+	dev->last_response.ret = INVALID_RESPONSE;
+	return _ret;
 }
 
 void vgpiofront_handler(evtchn_port_t port, struct pt_regs *regs, void *data) {
@@ -78,7 +80,6 @@ void vgpiofront_handler(evtchn_port_t port, struct pt_regs *regs, void *data) {
 	us = (t2-t1)/1000;
 	ns = (t2-t1) - (us*1000);
 	tprintk("handler called after: %lu,%luus\n", us,ns);
-	//~ VGPIOFRONT_DEBUG("vgpiofront_handler called on port %d\n", port);
 
 moretodo:
 	rp = dev->ring.sring->rsp_prod;
@@ -89,18 +90,19 @@ moretodo:
     {
 		rsp = RING_GET_RESPONSE(&dev->ring, cons);
 		nr_consumed++;
-		
-		dev->ring.rsp_cons = ++cons;      
+		dev->last_response = *rsp;
+		dev->ring.rsp_cons = ++cons;   
+		up(&dev->sem);   
         if (dev->ring.rsp_cons != cons)
             /* We reentered, we must not continue here */
             break;
+			
 	}
 	
 	RING_FINAL_CHECK_FOR_RESPONSES(&dev->ring, more);
     if (more) goto moretodo;
 	
-	up(&dev->sem);
-		VGPIOFRONT_DEBUG("reponse: %d\n", rsp->ret);
+	VGPIOFRONT_DEBUG("reponse: %d\n", rsp->ret);
 
 }
 
@@ -298,63 +300,66 @@ error:
  */
 struct vgpiofront_dev* init_vgpiofront(const char* _nodename)
 {
-   struct vgpiofront_dev* dev;
-   const char* nodename;
-   char path[512];
-   char* value;
-   char* err;
-   unsigned long long ival;
+	struct vgpiofront_dev* dev;
+	const char* nodename;
+	char path[512];
+	char* value;
+	char* err;
+	unsigned long long ival;
 
-   printk("============= Init VGPIO Front ================\n");
+	printk("============= Init VGPIO Front ================\n");
 
-   dev = malloc(sizeof(*dev));
-   memset(dev, 0, sizeof(*dev));
+	dev = malloc(sizeof(*dev));
+	memset(dev, 0, sizeof(*dev));
+	
+	dev->last_response.ret = INVALID_RESPONSE;
+
 
 	/* Init semaphore */
 	init_SEMAPHORE(&dev->sem, 0);
 	/* Set node name */
-   nodename = _nodename ? _nodename : "device/vgpio/0";
-   dev->nodename = strdup(nodename);
+	nodename = _nodename ? _nodename : "device/vgpio/0";
+	dev->nodename = strdup(nodename);
   
 
-   /* Get backend domid */
-   snprintf(path, 512, "%s/backend-id", dev->nodename);
-   if((err = xenbus_read(XBT_NIL, path, &value))) {
-      VGPIOFRONT_ERR("Unable to read %s during vgpiofront initialization! error = %s\n", path, err);
-      free(err);
-      goto error;
-   }
-   if(sscanf(value, "%llu", &ival) != 1) {
-      VGPIOFRONT_ERR("%s has non-integer value (%s)\n", path, value);
-      free(value);
-      goto error;
-   }
-   free(value);
-   dev->bedomid = ival;
-   VGPIOFRONT_LOG("backend dom-id is %llu\n", ival);
-   
-   /* Get backend xenstore path */
-   snprintf(path, 512, "%s/backend", dev->nodename);
-   if((err = xenbus_read(XBT_NIL, path, &dev->bepath))) {
-      VGPIOFRONT_ERR("Unable to read %s during vgpiofront initialization! error = %s\n", path, err);
-      free(err);
-      goto error;
-   }
-   VGPIOFRONT_LOG("backend path is %s\n", dev->bepath);
-   
+	/* Get backend domid */
+	snprintf(path, 512, "%s/backend-id", dev->nodename);
+	if((err = xenbus_read(XBT_NIL, path, &value))) {
+	  VGPIOFRONT_ERR("Unable to read %s during vgpiofront initialization! error = %s\n", path, err);
+	  free(err);
+	  goto error;
+	}
+	if(sscanf(value, "%llu", &ival) != 1) {
+	  VGPIOFRONT_ERR("%s has non-integer value (%s)\n", path, value);
+	  free(value);
+	  goto error;
+	}
+	free(value);
+	dev->bedomid = ival;
+	VGPIOFRONT_LOG("backend dom-id is %llu\n", ival);
+
+	/* Get backend xenstore path */
+	snprintf(path, 512, "%s/backend", dev->nodename);
+	if((err = xenbus_read(XBT_NIL, path, &dev->bepath))) {
+	  VGPIOFRONT_ERR("Unable to read %s during vgpiofront initialization! error = %s\n", path, err);
+	  free(err);
+	  goto error;
+	}
+	VGPIOFRONT_LOG("backend path is %s\n", dev->bepath);
 
 
-   /* Create and publish grant reference and event channel */
-   if (vgpiofront_connect(dev)) {
-      goto error;
-   }
 
-   /* Wait for backend to connect */
-   if( wait_for_backend_state_changed(dev, XenbusStateConnected)) {
-      goto error;
-   }
+	/* Create and publish grant reference and event channel */
+	if (vgpiofront_connect(dev)) {
+	  goto error;
+	}
 
-   return dev;
+	/* Wait for backend to connect */
+	if( wait_for_backend_state_changed(dev, XenbusStateConnected)) {
+	  goto error;
+	}
+
+	return dev;
 
 error:
    shutdown_vgpiofront(dev);

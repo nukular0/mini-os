@@ -10,16 +10,14 @@
 #include <xen/io/ring.h>
 #include <mini-os/semaphore.h>
 
-#define CMD_GPIO_REQUEST			0
-#define CMD_GPIO_FREE				1
-#define CMD_GPIO_DIRECTION_OUTPUT	2	
-#define CMD_GPIO_DIRECTION_INPUT	3
-#define CMD_GPIO_SET_DEBOUNCE		4
-#define CMD_GPIO_GET_VALUE			5
-#define CMD_GPIO_SET_VALUE			6
+typedef enum { CMD_GPIO_REQUEST, CMD_GPIO_FREE, CMD_GPIO_DIRECTION_OUTPUT, 
+		CMD_GPIO_DIRECTION_INPUT, CMD_GPIO_SET_DEBOUNCE, CMD_GPIO_GET_VALUE, 
+		CMD_GPIO_SET_VALUE } vgpio_command_t;
+
+#define INVALID_RESPONSE			-9999
 
 struct vgpio_request {
-	unsigned cmd;
+	vgpio_command_t cmd;
 	unsigned pin;
 	unsigned val; 
 };
@@ -52,6 +50,8 @@ struct vgpiofront_dev {
 
    XenbusState state;
    struct semaphore sem; // Semaphore used for waiting for responses from backend
+   
+   vgpio_response_t last_response;
 };
 
 
