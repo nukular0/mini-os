@@ -36,12 +36,19 @@ void run_client(void *p)
 	unsigned int ledOn = 0;
 	
     tprintk("Drivertest!\n");
-    
+        
  
 	gpio_dev = init_vgpiofront("device/vgpio/0");
 	
 	ret = gpio_request(gpio_dev, gpioLED, NULL);
 	tprintk("gpio_request: %d\n", ret);
+	
+	ret = gpio_request(gpio_dev, gpioLED, NULL);
+	tprintk("gpio_request: %d\n", ret);
+	
+	ret = gpio_request(gpio_dev, gpioLED, NULL);
+	tprintk("gpio_request: %d\n", ret);
+	
 	ret = gpio_request(gpio_dev, gpioFan, NULL);
 	tprintk("gpio_request: %d\n", ret);
 	
@@ -53,6 +60,13 @@ void run_client(void *p)
 	
 	gpio_set_value(gpio_dev, gpioFan, 1);
 	
+	gpio_set_value(gpio_dev, gpioLED, 0);
+	gpio_set_value(gpio_dev, gpioLED, 1);
+	gpio_set_value(gpio_dev, gpioLED, 0);
+	gpio_set_value(gpio_dev, gpioLED, 1);
+	
+
+	
     while (running == 1) {
 		t1 = NOW();
 		gpio_set_value(gpio_dev, gpioLED, ledOn);
@@ -61,7 +75,8 @@ void run_client(void *p)
         ns = (t2-t1) - (us*1000);
         tprintk("Elapsed: %lu,%luus\n", us,ns);
         ledOn = !ledOn;
-        msleep(200);
+                
+        msleep(2000);
         //~ msleep(1500);
         //~ vgpiofront_send(gpio2);
     }

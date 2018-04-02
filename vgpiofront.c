@@ -5,10 +5,11 @@
 #include <mini-os/wait.h>
 #include <mini-os/gnttab.h>
 #include <xen/io/xenbus.h>
-#include <vgpiofront.h>
 #include <mini-os/lib.h>
 #include <fcntl.h>
 #include <mini-os/time.h>
+#include <mini-os/errno.h>
+#include <vgpiofront.h>
 
 #define VGPIOFRONT_PRINT_DEBUG
 #ifdef VGPIOFRONT_PRINT_DEBUG
@@ -24,7 +25,8 @@ s_time_t t1, t2, us, ns;
 
 static void free_vgpiofront(struct vgpiofront_dev *dev)
 {
-    mask_evtchn(dev->evtchn);
+    struct _pin_irq *elm, *telm;
+    mask_evtchn(dev->comm_evtchn);
 
 	if(dev->bepath)
 		free(dev->bepath);
@@ -32,7 +34,17 @@ static void free_vgpiofront(struct vgpiofront_dev *dev)
     gnttab_end_access(dev->ring_ref);
     free_page(dev->ring.sring);
 
-    unbind_evtchn(dev->evtchn);
+    unbind_evtchn(dev->comm_evtchn);
+
+	// free irq_list
+	// same as LIST_FOREACH_SAFE(elm, &dev->irq_list, list, telm), but that macro does not exist for some reason
+	for ((elm) = LIST_FIRST((&dev->irq_list)); (elm) && ((telm) = LIST_NEXT((elm), list), 1); (elm) = (telm)){
+		mask_evtchn(elm->port);
+		unbind_evtchn(elm->port);
+		LIST_REMOVE(elm, list);
+		free(elm);	
+		
+	}
 
     free(dev->nodename);
     free(dev);
@@ -46,7 +58,7 @@ int vgpiofront_send_request(struct vgpiofront_dev* dev, vgpio_request_t req){
 	
 	//~ VGPIOFRONT_LOG("sending...");
 	if(dev->state == XenbusStateConnected){
-		printk("on device %s, via evtchn %u\n", dev->nodename, dev->evtchn);
+		printk("on device %s, via evtchn %u\n", dev->nodename, dev->comm_evtchn);
 		i = dev->ring.req_prod_pvt;
 		_req = RING_GET_REQUEST(&dev->ring, i);
 		memcpy(_req, &req, sizeof(req));
@@ -56,7 +68,7 @@ int vgpiofront_send_request(struct vgpiofront_dev* dev, vgpio_request_t req){
 		RING_PUSH_REQUESTS_AND_CHECK_NOTIFY(&dev->ring, notify);
 		if(notify) 
 		{
-			err = notify_remote_via_evtchn(dev->evtchn);    
+			err = notify_remote_via_evtchn(dev->comm_evtchn);    
 			t1 = NOW();
 		}
 		down(&dev->sem);
@@ -71,7 +83,14 @@ int vgpiofront_send_request(struct vgpiofront_dev* dev, vgpio_request_t req){
 	return _ret;
 }
 
-void vgpiofront_handler(evtchn_port_t port, struct pt_regs *regs, void *data) {
+void vgpiofront_hw_irq_handler(evtchn_port_t port, struct pt_regs *regs, void *data)
+{
+	// data is a pointer to the handler that was registered for this event/irq
+	void (*handler)(void) = (void(*)(void))data;
+	handler();
+}
+void vgpiofront_handler(evtchn_port_t port, struct pt_regs *regs, void *data)
+{
 	RING_IDX rp, cons;
 	vgpio_response_t *rsp;
 	int nr_consumed, more;
@@ -124,7 +143,7 @@ again:
       goto abort_transaction;
    }
 
-   if((err = xenbus_printf(xbt, dev->nodename, "event-channel", "%u", (unsigned int) dev->evtchn))) {
+   if((err = xenbus_printf(xbt, dev->nodename, "event-channel", "%u", (unsigned int) dev->comm_evtchn))) {
       VGPIOFRONT_ERR("Unable to write %s/event-channel, error was %s\n", dev->nodename, err);
       free(err);
       goto abort_transaction;
@@ -256,13 +275,15 @@ static int vgpiofront_connect(struct vgpiofront_dev* dev)
 	SHARED_RING_INIT(sring);
 	FRONT_RING_INIT(&dev->ring, sring, PAGE_SIZE);
 	
-	/*Create event channel */
-	if(evtchn_alloc_unbound(dev->bedomid, vgpiofront_handler, dev, &dev->evtchn)) {
-	  VGPIOFRONT_ERR("Unable to allocate event channel\n");
+	/* Create event channel for communication with backend */
+	if(evtchn_alloc_unbound(dev->bedomid, vgpiofront_handler, dev, &dev->comm_evtchn)) {
+	  VGPIOFRONT_ERR("Unable to allocate comm_event channel\n");
 	  goto error_postmap;
 	}
-	unmask_evtchn(dev->evtchn);
-	VGPIOFRONT_DEBUG("event channel is %lu\n", (unsigned long) dev->evtchn);
+	unmask_evtchn(dev->comm_evtchn);
+	VGPIOFRONT_DEBUG("comm_event channel is %lu\n", (unsigned long) dev->comm_evtchn);
+
+	
 
 	/* Write the entries to xenstore */
 	if(publish_xenbus(dev)) {
@@ -281,8 +302,8 @@ static int vgpiofront_connect(struct vgpiofront_dev* dev)
 
 	return 0;
 error_postevtchn:
-      mask_evtchn(dev->evtchn);
-      unbind_evtchn(dev->evtchn);
+      mask_evtchn(dev->comm_evtchn);
+      unbind_evtchn(dev->comm_evtchn);
 error_postmap:
       gnttab_end_access(dev->ring_ref);
       free_page(sring);
@@ -321,6 +342,8 @@ struct vgpiofront_dev* init_vgpiofront(const char* _nodename)
 	nodename = _nodename ? _nodename : "device/vgpio/0";
 	dev->nodename = strdup(nodename);
   
+	/* Init irq List */
+	LIST_INIT(&dev->irq_list);
 
 	/* Get backend domid */
 	snprintf(path, 512, "%s/backend-id", dev->nodename);
@@ -480,3 +503,94 @@ void gpio_set_value(struct vgpiofront_dev *dev, unsigned gpio, int value)
 	vgpiofront_send_request(dev, req);
 }
 
+int gpio_request_irq(struct vgpiofront_dev *dev, unsigned gpio, void (*handler))
+{
+	evtchn_port_t _irq_evtchn;
+	int err;
+	
+	if(!dev){
+		VGPIOFRONT_ERR("gpio_request_irq: dev must not be NULL\n");
+		return -1;
+	}
+	
+	if(!handler){
+		VGPIOFRONT_ERR("gpio_request_irq: handler must not be NULL\n");
+		return -1;
+	}
+	
+	/* Create event channel for gpio interrupts */
+	if(evtchn_alloc_unbound(dev->bedomid, vgpiofront_hw_irq_handler, handler, &_irq_evtchn)) {
+	  VGPIOFRONT_ERR("Unable to allocate irq_event channel\n");
+	  return -1;
+	}
+	unmask_evtchn(_irq_evtchn);
+	VGPIOFRONT_DEBUG("irq_event channel is %lu\n", (unsigned long) _irq_evtchn);
+	
+	vgpio_request_t req = {
+		.cmd = CMD_GPIO_REQUEST_IRQ,
+		.pin = gpio,
+		.val = (unsigned int)_irq_evtchn,
+	};
+	
+	/* alloc memory for irq_list entry 
+	 * do it before vgpiofront_send_request(), so that if it should fail,
+	 * wo do not have to undo the irq_request in the backend */
+	struct _pin_irq *pin_irq = (struct _pin_irq*)malloc(sizeof(struct _pin_irq));
+	if(!pin_irq){
+		VGPIOFRONT_DEBUG("gpio_request_irq: malloc() for pin_irq failed\n");
+		unbind_evtchn(_irq_evtchn);
+		return -ENOMEM;
+	}
+	
+	/* Request IRQ for pin from backend */
+	if((err = vgpiofront_send_request(dev, req))){
+		VGPIOFRONT_DEBUG("gpio_request_irq: backend could not request IRQ, error: %d\n", err);
+		unbind_evtchn(_irq_evtchn);
+		return err;
+	}
+	
+	/* Add irq to dev's irq_list */
+	pin_irq->pin = gpio;
+	pin_irq->handler = handler;
+	pin_irq->port = _irq_evtchn;
+	LIST_INSERT_HEAD(&dev->irq_list, pin_irq, list);
+	
+	return 0;
+}
+
+void gpio_free_irq(struct vgpiofront_dev *dev, unsigned gpio)
+{
+	struct _pin_irq *tmp;
+	evtchn_port_t _port;
+	
+	if(!dev){
+		VGPIOFRONT_ERR("gpio_request_irq: dev must not be NULL\n");
+	}
+	
+	
+	// get event channel port for gpio from dev's irq_list
+	LIST_FOREACH(tmp, &dev->irq_list, list){
+		if(tmp->pin == gpio){
+			_port = tmp->port;
+			break;
+		}
+	}
+	
+	// mask event channel: we do not want interrupts anymore
+	mask_evtchn(_port);
+	
+	// Send free request with pin number to backend
+	vgpio_request_t req = {
+		.cmd = CMD_GPIO_FREE_IRQ,
+		.pin = gpio,
+		.val = 0,
+	};
+	vgpiofront_send_request(dev, req);
+	
+	// unbind event channel
+	unbind_evtchn(_port);
+	
+	// remove irq from dev's irq_list and free memory
+	LIST_REMOVE(tmp, list);
+	free(tmp);
+}

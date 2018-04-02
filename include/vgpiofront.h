@@ -9,12 +9,21 @@
 #include <xen/io/xenbus.h>
 #include <xen/io/ring.h>
 #include <mini-os/semaphore.h>
+#include <sys/queue.h>
 
 typedef enum { CMD_GPIO_REQUEST, CMD_GPIO_FREE, CMD_GPIO_DIRECTION_OUTPUT, 
 		CMD_GPIO_DIRECTION_INPUT, CMD_GPIO_SET_DEBOUNCE, CMD_GPIO_GET_VALUE, 
-		CMD_GPIO_SET_VALUE } vgpio_command_t;
+		CMD_GPIO_SET_VALUE, CMD_GPIO_REQUEST_IRQ, CMD_GPIO_FREE_IRQ } vgpio_command_t;
 
 #define INVALID_RESPONSE			-9999
+
+struct _pin_irq {
+	LIST_ENTRY(_pin_irq) list;
+	unsigned pin;
+	evtchn_port_t port;
+	void (*handler)(void);
+};
+
 
 struct vgpio_request {
 	vgpio_command_t cmd;
@@ -40,7 +49,7 @@ typedef struct vgpioif_shared_page vgpioif_shared_page_t;
 
 struct vgpiofront_dev {
    grant_ref_t ring_ref;
-   evtchn_port_t evtchn;
+   evtchn_port_t comm_evtchn;
 
    struct vgpio_front_ring ring;
 
@@ -52,6 +61,8 @@ struct vgpiofront_dev {
    struct semaphore sem; // Semaphore used for waiting for responses from backend
    
    vgpio_response_t last_response;
+   
+   LIST_HEAD(pin_irq_list, _pin_irq) irq_list;
 };
 
 
@@ -71,6 +82,7 @@ int gpio_direction_output(struct vgpiofront_dev *dev, unsigned gpio, int value);
 int gpio_set_debounce(struct vgpiofront_dev *dev, unsigned gpio, unsigned debounce);
 int gpio_get_value(struct vgpiofront_dev *dev, unsigned gpio);
 void gpio_set_value(struct vgpiofront_dev *dev, unsigned gpio, int value);
-
+int gpio_request_irq(struct vgpiofront_dev *dev, unsigned gpio, void (*handler));
+void gpio_free_irq(struct vgpiofront_dev *dev, unsigned gpio);
 
 #endif
