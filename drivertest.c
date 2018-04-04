@@ -22,19 +22,37 @@
 
 // Leave these here!! They are required by mini-os
 unsigned cycles_low, cycles_high, cycles_low1, cycles_high1; 
-unsigned long start_ts, end_ts;
+unsigned long t0, start_ts, end_ts;
 int running = 1;
+uint64_t us, ns;
 
 struct vgpiofront_dev *gpio_dev;
 unsigned int gpioLED = 403;       		// Linux 403 = Up 37
-unsigned int gpioFan = 464;       		// Linux 464 = Up 27
 unsigned int gpioButton = 404;       	// Linux 464 = Up 31
+unsigned int gpioIn = 464;       		// Linux 464 = Up 27
+unsigned int gpioOut = 430;				// Linux 430 = Up 29
 
 static void irq_handler(void);
+static void button_handler(void);
 
 static void irq_handler()
 {
-	tprintk("Interrupt!\n");
+	end_ts = NOW();
+	us = (start_ts-t0)/1000;
+    ns = (start_ts-t0) - (us*1000);
+	tprintk("set_value took %lu,%luus\n", us,ns);
+	us = (end_ts - start_ts)/1000;
+    ns = (end_ts - start_ts) - (us*1000);
+    tprintk("interrupt after %lu,%luus\n", us,ns);
+    us = (end_ts - t0)/1000;
+    ns = (end_ts - t0) - (us*1000);
+    tprintk("total: %lu,%luus\n", us,ns);
+ 
+}
+
+static void button_handler()
+{
+	tprintk("Button pressed!\n");
 }
 
 void run_client(void *p)
@@ -51,50 +69,45 @@ void run_client(void *p)
 	ret = gpio_request(gpio_dev, gpioLED, NULL);
 	tprintk("gpio_request (pin %d): %d\n",gpioLED, ret);
 	
-	//~ ret = gpio_request(gpio_dev, gpioLED, NULL);
-	//~ tprintk("gpio_request (pin %d): %d\n",gpioLED, ret);
-	
-	//~ ret = gpio_request(gpio_dev, gpioLED, NULL);
-	//~ tprintk("gpio_request (pin %d): %d\n",gpioLED, ret);
-	
-	ret = gpio_request(gpio_dev, gpioFan, NULL);
-	tprintk("gpio_request (pin %d): %d\n",gpioFan, ret);
-	
-	ret = gpio_direction_output(gpio_dev, gpioLED, 0);
-	tprintk("gpio_direction_output (pin %d): %d\n",gpioLED, ret);
-	
-	ret = gpio_direction_output(gpio_dev, gpioFan, 0);
-	tprintk("gpio_direction_output (pin %d): %d\n",gpioFan, ret);
-	
-	gpio_set_value(gpio_dev, gpioFan, 1);
-	
-	//~ gpio_set_value(gpio_dev, gpioLED, 0);
-	gpio_set_value(gpio_dev, gpioLED, 1);
-	//~ gpio_set_value(gpio_dev, gpioLED, 0);
-	//~ gpio_set_value(gpio_dev, gpioLED, 1);
-	
 	ret = gpio_request(gpio_dev, gpioButton, NULL);
 	tprintk("button gpio_request (pin %d): %d\n",gpioButton, ret);
+	
+	ret = gpio_request(gpio_dev, gpioIn, NULL);
+	tprintk("button gpio_request (pin %d): %d\n",gpioIn, ret);
+	
+	ret = gpio_request(gpio_dev, gpioOut, NULL);
+	tprintk("button gpio_request (pin %d): %d\n",gpioOut, ret);
 	
 	ret = gpio_direction_input(gpio_dev, gpioButton);
 	tprintk("gpio_direction_input (pin %d): %d\n",gpioButton, ret);
 	
-	//~ ret = gpio_set_debounce(gpio_dev, gpioButton, 200);
-	//~ tprintk("gpio_set_debounce (pin %d): %d\n",gpioButton, ret);
+	ret = gpio_direction_input(gpio_dev, gpioIn);
+	tprintk("gpio_direction_input (pin %d): %d\n",gpioIn, ret);
 	
-	ret = gpio_request_irq(gpio_dev, gpioButton, irq_handler);
+	ret = gpio_direction_output(gpio_dev, gpioOut, 1);
+	tprintk("gpio_direction_output (pin %d): %d\n",gpioOut, ret);
+	
+	ret = gpio_request_irq(gpio_dev, gpioButton, button_handler, IRQF_TRIGGER_FALLING);
 	tprintk("irq request (pin %d): %d\n",gpioButton, ret);
+	
+	ret = gpio_request_irq(gpio_dev, gpioIn, irq_handler, IRQF_TRIGGER_FALLING);
+	tprintk("irq request (pin %d): %d\n",gpioIn, ret);
+	
+	msleep(1000);
+	
+	t0 = NOW();
+	gpio_set_value(gpio_dev, gpioOut, 0);
+	start_ts = NOW();
 	
     while (running == 1) {
 		//~ t1 = NOW();
-		//~ gpio_set_value(gpio_dev, gpioLED, ledOn);
-        //~ t2 = NOW();
-        //~ us = (t2-t1)/1000;
-        //~ ns = (t2-t1) - (us*1000);
-        //~ tprintk("Elapsed: %lu,%luus\n", us,ns);
+		gpio_set_value(gpio_dev, gpioLED, ledOn);
+		gpio_set_value(gpio_dev, gpioOut, 1);
         ledOn = !ledOn;
-                
-        msleep(200);
+        msleep(1000);
+        t0 = NOW();
+		gpio_set_value(gpio_dev, gpioOut, 0);
+		start_ts = NOW();
         //~ msleep(1500);
         //~ vgpiofront_send(gpio2);
     }
@@ -106,8 +119,11 @@ void run_client(void *p)
 void app_shutdown(unsigned reason)
 {
 	gpio_free_irq(gpio_dev, gpioButton);
+	gpio_free_irq(gpio_dev, gpioIn);
 	gpio_free(gpio_dev, gpioLED);
-	gpio_free(gpio_dev, gpioFan);
+	gpio_free(gpio_dev, gpioButton);
+	gpio_free(gpio_dev, gpioIn);
+	gpio_free(gpio_dev, gpioOut);
 	shutdown_vgpiofront(gpio_dev);
 	//~ shutdown_vgpiofront(gpio2);
     struct sched_shutdown sched_shutdown = { .reason = reason };
