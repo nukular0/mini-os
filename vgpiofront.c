@@ -13,10 +13,10 @@
 
 #define VGPIOFRONT_PRINT_DEBUG
 #ifdef VGPIOFRONT_PRINT_DEBUG
-#define VGPIOFRONT_DEBUG(fmt,...) printk("vgpiofront:Debug("__FILE__":%d) " fmt, __LINE__, ##__VA_ARGS__)
-#define VGPIOFRONT_DEBUG_MORE(fmt,...) printk(fmt, ##__VA_ARGS__)
+#define VGPIO_DEBUG(fmt,...) printk("vgpiofront:Debug("__FILE__":%d) " fmt, __LINE__, ##__VA_ARGS__)
+#define VGPIO_DEBUG_MORE(fmt,...) printk(fmt, ##__VA_ARGS__)
 #else
-#define VGPIOFRONT_DEBUG(fmt,...)
+#define VGPIO_DEBUG(fmt,...)
 #endif
 #define VGPIOFRONT_ERR(fmt,...) printk("vgpiofront:Error " fmt, ##__VA_ARGS__)
 #define VGPIOFRONT_LOG(fmt,...) printk("vgpiofront:Info " fmt, ##__VA_ARGS__)
@@ -54,11 +54,10 @@ int vgpiofront_send_request(struct vgpiofront_dev* dev, vgpio_request_t req){
 	RING_IDX i;
 	vgpio_request_t *_req;
 	int notify;
-	int err;
+	//~ int err;
 	
 	//~ VGPIOFRONT_LOG("sending...");
 	if(dev->state == XenbusStateConnected){
-		printk("on device %s, via evtchn %u\n", dev->nodename, dev->comm_evtchn);
 		i = dev->ring.req_prod_pvt;
 		_req = RING_GET_REQUEST(&dev->ring, i);
 		memcpy(_req, &req, sizeof(req));
@@ -68,14 +67,14 @@ int vgpiofront_send_request(struct vgpiofront_dev* dev, vgpio_request_t req){
 		RING_PUSH_REQUESTS_AND_CHECK_NOTIFY(&dev->ring, notify);
 		if(notify) 
 		{
-			err = notify_remote_via_evtchn(dev->comm_evtchn);    
-			t1 = NOW();
+			VGPIO_DEBUG("notifying %d\n", dev->comm_evtchn);
+			notify_remote_via_evtchn(dev->comm_evtchn);    
+			VGPIO_DEBUG("notified\n");
 		}
 		down(&dev->sem);
-		VGPIOFRONT_LOG("Sent! (%d)\n", err);
 	}
 	else{
-		printk("error: not connected");
+		VGPIO_DEBUG("error: not connected");
 		return -1;
 	}
 	int _ret = dev->last_response.ret;
@@ -95,10 +94,10 @@ void vgpiofront_handler(evtchn_port_t port, struct pt_regs *regs, void *data)
 	vgpio_response_t *rsp;
 	int nr_consumed, more;
 	struct vgpiofront_dev *dev = (struct vgpiofront_dev*) data;
-	t2 = NOW();
-	us = (t2-t1)/1000;
-	ns = (t2-t1) - (us*1000);
-	tprintk("handler called after: %lu,%luus\n", us,ns);
+	//~ t2 = NOW();
+	//~ us = (t2-t1)/1000;
+	//~ ns = (t2-t1) - (us*1000);
+	//~ tprintk("handler called after: %lu,%luus\n", us,ns);
 
 moretodo:
 	rp = dev->ring.sring->rsp_prod;
@@ -121,8 +120,6 @@ moretodo:
 	RING_FINAL_CHECK_FOR_RESPONSES(&dev->ring, more);
     if (more) goto moretodo;
 	
-	VGPIOFRONT_DEBUG("reponse: %d\n", rsp->ret);
-
 }
 
 static int publish_xenbus(struct vgpiofront_dev* dev) {
@@ -259,7 +256,6 @@ static int vgpiofront_connect(struct vgpiofront_dev* dev)
 	
 	char* err;
 	struct vgpio_sring *sring;
-	VGPIOFRONT_DEBUG("connecting...");
    
 	/* Create shared page/ring */
 	sring = (struct vgpio_sring *)alloc_page();
@@ -269,7 +265,7 @@ static int vgpiofront_connect(struct vgpiofront_dev* dev)
 	}
 	memset(sring, 0, PAGE_SIZE);
 	dev->ring_ref = gnttab_grant_access(dev->bedomid, virt_to_mfn(sring), 0);
-	VGPIOFRONT_DEBUG("grant ref is %lu\n", (unsigned long) dev->ring_ref);
+	//~ VGPIO_DEBUG("grant ref is %lu\n", (unsigned long) dev->ring_ref);
 
 	/* Initialize shared ring in shared page */
 	SHARED_RING_INIT(sring);
@@ -281,7 +277,7 @@ static int vgpiofront_connect(struct vgpiofront_dev* dev)
 	  goto error_postmap;
 	}
 	unmask_evtchn(dev->comm_evtchn);
-	VGPIOFRONT_DEBUG("comm_event channel is %lu\n", (unsigned long) dev->comm_evtchn);
+	//~ VGPIO_DEBUG("comm_event channel is %lu\n", (unsigned long) dev->comm_evtchn);
 
 	
 
@@ -395,7 +391,7 @@ void shutdown_vgpiofront(struct vgpiofront_dev* dev)
    if(dev == NULL) {
       return;
    }
-   VGPIOFRONT_LOG("Shutting down vgpiofront\n");
+   //~ VGPIOFRONT_LOG("Shutting down vgpiofront\n");
    /* disconnect */
    if(dev->state == XenbusStateConnected) {
       /* Tell backend we are closing */
@@ -524,7 +520,7 @@ int gpio_request_irq(struct vgpiofront_dev *dev, unsigned gpio, void (*handler))
 	  return -1;
 	}
 	unmask_evtchn(_irq_evtchn);
-	VGPIOFRONT_DEBUG("irq_event channel is %lu\n", (unsigned long) _irq_evtchn);
+	//~ VGPIO_DEBUG("irq_event channel is %lu\n", (unsigned long) _irq_evtchn);
 	
 	vgpio_request_t req = {
 		.cmd = CMD_GPIO_REQUEST_IRQ,
@@ -537,14 +533,14 @@ int gpio_request_irq(struct vgpiofront_dev *dev, unsigned gpio, void (*handler))
 	 * wo do not have to undo the irq_request in the backend */
 	struct _pin_irq *pin_irq = (struct _pin_irq*)malloc(sizeof(struct _pin_irq));
 	if(!pin_irq){
-		VGPIOFRONT_DEBUG("gpio_request_irq: malloc() for pin_irq failed\n");
+		VGPIO_DEBUG("gpio_request_irq: malloc() for pin_irq failed\n");
 		unbind_evtchn(_irq_evtchn);
 		return -ENOMEM;
 	}
 	
 	/* Request IRQ for pin from backend */
 	if((err = vgpiofront_send_request(dev, req))){
-		VGPIOFRONT_DEBUG("gpio_request_irq: backend could not request IRQ, error: %d\n", err);
+		VGPIO_DEBUG("gpio_request_irq: backend could not request IRQ, error: %d\n", err);
 		unbind_evtchn(_irq_evtchn);
 		return err;
 	}
