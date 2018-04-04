@@ -11,7 +11,7 @@
 #include <mini-os/errno.h>
 #include <vgpiofront.h>
 
-#define VGPIOFRONT_PRINT_DEBUG
+#define nVGPIOFRONT_PRINT_DEBUG
 #ifdef VGPIOFRONT_PRINT_DEBUG
 #define VGPIO_DEBUG(fmt,...) printk("vgpiofront:Debug("__FILE__":%d) " fmt, __LINE__, ##__VA_ARGS__)
 #define VGPIO_DEBUG_MORE(fmt,...) printk(fmt, ##__VA_ARGS__)
@@ -499,7 +499,7 @@ void gpio_set_value(struct vgpiofront_dev *dev, unsigned gpio, int value)
 	vgpiofront_send_request(dev, req);
 }
 
-int gpio_request_irq(struct vgpiofront_dev *dev, unsigned gpio, void (*handler))
+int gpio_request_irq(struct vgpiofront_dev *dev, unsigned gpio, void (*handler), unsigned trigger)
 {
 	evtchn_port_t _irq_evtchn;
 	int err;
@@ -526,6 +526,7 @@ int gpio_request_irq(struct vgpiofront_dev *dev, unsigned gpio, void (*handler))
 		.cmd = CMD_GPIO_REQUEST_IRQ,
 		.pin = gpio,
 		.val = (unsigned int)_irq_evtchn,
+		.irq_edge = trigger,
 	};
 	
 	/* alloc memory for irq_list entry 

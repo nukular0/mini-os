@@ -15,6 +15,11 @@ typedef enum { CMD_GPIO_REQUEST, CMD_GPIO_FREE, CMD_GPIO_DIRECTION_OUTPUT,
 		CMD_GPIO_DIRECTION_INPUT, CMD_GPIO_SET_DEBOUNCE, CMD_GPIO_GET_VALUE, 
 		CMD_GPIO_SET_VALUE, CMD_GPIO_REQUEST_IRQ, CMD_GPIO_FREE_IRQ } vgpio_command_t;
 
+#define IRQF_TRIGGER_RISING		0x00000001
+#define IRQF_TRIGGER_FALLING	0x00000002
+#define IRQF_TRIGGER_HIGH		0x00000004
+#define IRQF_TRIGGER_LOW		0x00000008
+
 #define INVALID_RESPONSE			-9999
 
 struct _pin_irq {
@@ -29,6 +34,7 @@ struct vgpio_request {
 	vgpio_command_t cmd;
 	unsigned pin;
 	unsigned val; 
+	unsigned irq_edge;
 };
 typedef struct vgpio_request vgpio_request_t;
 
@@ -82,7 +88,7 @@ int gpio_direction_output(struct vgpiofront_dev *dev, unsigned gpio, int value);
 int gpio_set_debounce(struct vgpiofront_dev *dev, unsigned gpio, unsigned debounce);
 int gpio_get_value(struct vgpiofront_dev *dev, unsigned gpio);
 void gpio_set_value(struct vgpiofront_dev *dev, unsigned gpio, int value);
-int gpio_request_irq(struct vgpiofront_dev *dev, unsigned gpio, void (*handler));
+int gpio_request_irq(struct vgpiofront_dev *dev, unsigned gpio, void (*handler), unsigned trigger);
 void gpio_free_irq(struct vgpiofront_dev *dev, unsigned gpio);
 
 #endif
