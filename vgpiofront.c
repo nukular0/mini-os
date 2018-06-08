@@ -94,10 +94,6 @@ void vgpiofront_handler(evtchn_port_t port, struct pt_regs *regs, void *data)
 	vgpio_response_t *rsp;
 	int nr_consumed, more;
 	struct vgpiofront_dev *dev = (struct vgpiofront_dev*) data;
-	//~ t2 = NOW();
-	//~ us = (t2-t1)/1000;
-	//~ ns = (t2-t1) - (us*1000);
-	//~ tprintk("handler called after: %lu,%luus\n", us,ns);
 
 moretodo:
 	rp = dev->ring.sring->rsp_prod;
@@ -366,8 +362,6 @@ struct vgpiofront_dev* init_vgpiofront(const char* _nodename)
 	}
 	VGPIOFRONT_LOG("backend path is %s\n", dev->bepath);
 
-
-
 	/* Create and publish grant reference and event channel */
 	if (vgpiofront_connect(dev)) {
 	  goto error;
@@ -384,6 +378,7 @@ error:
    shutdown_vgpiofront(dev);
    return NULL;
 }
+
 void shutdown_vgpiofront(struct vgpiofront_dev* dev)
 {
    char* err;
