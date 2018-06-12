@@ -18,6 +18,17 @@
 #include <mini-os/can_error.h>
 
 
+#define CYCLES_NOW_START(low,high)	asm volatile ("CPUID\n\t"												\
+			"RDTSC\n\t"																						\
+			"mov %%edx, %0\n\t"																				\
+			"mov %%eax, %1\n\t": "=r" (high), "=r" (low):: "%rax", "%rbx", "%rcx", "%rdx")		
+
+
+#define CYCLES_NOW_END(low,high)	asm volatile ("RDTSCP\n\t" 										\
+							"mov %%edx, %0\n\t" 													\
+							"mov %%eax, %1\n\t"														\
+							"CPUID\n\t": "=r" (high), "=r" (low):: "%rax", "%rbx", "%rcx", "%rdx")
+
 #define XENSTORE_SENSOR_PATH "/sensors"
 #define TO_INT16(x, y) ((int16_t)( (y << 8) + x))
 
@@ -125,12 +136,14 @@ void handle_can_frame(struct can_frame *cf)
 	char* 					err;
 	char					path[512];
 	int						retry;
+	unsigned long 			start_ts;
 	
 	if(!can_frame_valid_data(cf)){
 		print_can_frame("RX : ", cf);
 		return;
 	}
 	
+	//~ print_can_frame("RX : ", cf);
 	can_frame_remove_flags(cf);
 
 again:	
@@ -206,6 +219,28 @@ again:
 		if(retry) {
 		  goto again;
 		}
+	}
+	else if(cf->can_id == 0x666){
+		CYCLES_NOW_START(cycles_low, cycles_high);
+		start_ts = ( ((unsigned long)cycles_high << 32) | cycles_low );
+		if((err = xenbus_transaction_start(&xbt))) {
+		  tprintk("Unable to start xenbus transaction, error was %s\n", err);
+		  free(err);
+		  return;
+	   }
+	   
+		snprintf(path, 512, "%s/timing", XENSTORE_SENSOR_PATH);
+		
+		err = xenbus_printf(xbt, path, "start", "%lu", start_ts);
+		xenbus_transaction_end(xbt, 0, &retry);
+		//~ if(err){
+			//~ tprintk("Could not write to xenstore: %s\n", err);
+			//~ free(err);
+		//~ }
+		//~ else{
+			//~ tprintk("written to %s: %lu\n", path, start_ts);
+		//~ }
+		
 	}
 	else{
 		print_can_frame("Not a sensor message: ", cf);

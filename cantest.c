@@ -24,7 +24,7 @@
 #define CYCLES_NOW_START(low,high)	asm volatile ("CPUID\n\t"												\
 			"RDTSC\n\t"																						\
 			"mov %%edx, %0\n\t"																				\
-			"mov %%eax, %1\n\t": "=r" (cycles_high), "=r" (cycles_low):: "%rax", "%rbx", "%rcx", "%rdx")		
+			"mov %%eax, %1\n\t": "=r" (high), "=r" (low):: "%rax", "%rbx", "%rcx", "%rdx")		
 
 
 #define CYCLES_NOW_END(low,high)	asm volatile ("RDTSCP\n\t" 										\
@@ -151,7 +151,7 @@ void run_client(void *p)
 	
     while (running == 1) {
 		
-		msleep(5);
+		msleep(800);
 		tx_frame.data[0]++;
 		vcanfront_send(can_dev, &tx_frame);
 		CYCLES_NOW_START(cycles_low, cycles_high);
