@@ -1,0 +1,12 @@
+/*
+ * cstdint
+ *
+ *  Created on: 21.11.2016
+ *      Author: hendrik
+ */
+
+#ifndef INCLUDE_CSTDINT_
+#define INCLUDE_CSTDINT_
+
+#include <types.h>
+#endif /* INCLUDE_CSTDINT_ */

@@ -1,19 +1,10 @@
-#  -*- mode: python; -*-
-#============================================================================
-# Python configuration setup for 'xm create'.
-# This script sets the parameters used when a domain is created using 'xm create'.
-# You use a separate script for each domain you want to create, or 
-# you can set the parameters for the domain on the xm command line.
-#============================================================================
-
-#----------------------------------------------------------------------------
-# Kernel image file.
-kernel = "mini-os.gz"
-
-# Initial memory allocation (in megabytes) for the new domain.
-memory = 32
-
-# A name for your domain. All domains must have different names.
-name = "Mini-OS"
-
-on_crash = 'destroy'
+kernel = "mini-os"
+memory = 128
+maxmem = 128
+name = "mini"
+vcpus = 1
+cpus = ['3']
+#serial="pty"
+#disk = [ 'phy:/root/images/domU.img,xvda,w' ]
+vif = ['bridge=xenbr1, mac= 00:1e:06:32:ff:c3, ip=129.217.43.119']
+#extra = 'console=hvc0 xencons=tty'# root=/dev/xvda rw'

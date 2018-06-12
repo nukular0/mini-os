@@ -376,6 +376,9 @@ void start_networking(void)
   netif_set_default(netif);
   netif_set_up(netif);
 
+  netif->flags |= NETIF_FLAG_IGMP;
+
+  igmp_start(netif);
   down(&tcpip_is_up);
 
   tprintk("Network is ready.\n");

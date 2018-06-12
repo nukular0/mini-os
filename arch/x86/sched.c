@@ -60,7 +60,7 @@ void dump_stack(struct thread *thread)
     unsigned long *bottom = (unsigned long *)(thread->stack + STACK_SIZE); 
     unsigned long *pointer = (unsigned long *)thread->sp;
     int count;
-    if(thread == current)
+    if(thread == current_thread)
     {
 #ifdef __i386__    
         asm("movl %%esp,%0"

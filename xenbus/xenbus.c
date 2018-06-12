@@ -529,7 +529,7 @@ xenbus_msg_reply(int type,
 
     schedule();
     remove_waiter(w, req_info[id].waitq);
-    wake(current);
+    wake(current_thread);
 
     rep = req_info[id].reply;
     BUG_ON(rep->req_id != id);

@@ -9,7 +9,7 @@
 #include <xen/io/xenbus.h>
 #include <xen/io/ring.h>
 #include <mini-os/semaphore.h>
-#include <sys/queue.h>
+#include <mini-os/list.h>
 
 typedef enum { CMD_GPIO_REQUEST, CMD_GPIO_FREE, CMD_GPIO_DIRECTION_OUTPUT, 
 		CMD_GPIO_DIRECTION_INPUT, CMD_GPIO_SET_DEBOUNCE, CMD_GPIO_GET_VALUE, 
@@ -23,7 +23,7 @@ typedef enum { CMD_GPIO_REQUEST, CMD_GPIO_FREE, CMD_GPIO_DIRECTION_OUTPUT,
 #define INVALID_RESPONSE			-9999
 
 struct _pin_irq {
-	LIST_ENTRY(_pin_irq) list;
+	MINIOS_LIST_ENTRY(struct _pin_irq) list;
 	unsigned pin;
 	evtchn_port_t port;
 	void (*handler)(void);
@@ -68,7 +68,7 @@ struct vgpiofront_dev {
    
    vgpio_response_t last_response;
    
-   LIST_HEAD(pin_irq_list, _pin_irq) irq_list;
+   MINIOS_LIST_HEAD(pin_irq_list, struct _pin_irq) irq_list;
 };
 
 

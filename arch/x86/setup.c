@@ -76,6 +76,20 @@ static inline void sse_init(void) {
 #define sse_init()
 #endif
 
+extern void (*__init_array_start)(void);
+extern void (*__init_array_end)(void);
+
+void constructor_init(void)
+{
+    void (**ctor)(void) = &__init_array_start;
+    for (; ctor != &__init_array_end; ++ctor) {
+        (*ctor)();
+    }
+}
+
+/*
+ * INITIAL C ENTRY POINT.
+ */
 #ifdef CONFIG_PARAVIRT
 #define hpc_init()
 
@@ -177,6 +191,8 @@ arch_init(void *par)
 	(void)HYPERVISOR_console_io(CONSOLEIO_write, strlen(hello), hello);
 
 	trap_init();
+
+    constructor_init();
 
 	/*Initialize floating point unit */
 	fpu_init();

@@ -272,7 +272,7 @@ int evtchn_get_peercontext(evtchn_port_t local_port, char *ctx, int size)
 
 void suspend_events(void)
 {
-    xprintk("Suspending event channels\n");
+//    xprintk("Suspending event channels\n");
     unbind_all_ports();
 }
 

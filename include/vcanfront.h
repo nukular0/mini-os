@@ -10,11 +10,11 @@
 #include <xen/io/xenbus.h>
 #include <xen/io/ring.h>
 #include <mini-os/semaphore.h>
-#include <sys/queue.h>
-
+//~ #include <mini-os/minios-external/bsd-sys-queue.h>
+#include <mini-os/list.h>
 
 struct _pin_irq {
-	LIST_ENTRY(_pin_irq) list;
+	MINIOS_LIST_ENTRY(struct _pin_irq) list;
 	unsigned pin;
 	evtchn_port_t port;
 	void (*handler)(void);

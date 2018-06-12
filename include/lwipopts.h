@@ -19,5 +19,7 @@
 #define MEMP_NUM_SYS_TIMEOUT 10
 #define TCP_SND_BUF 3000
 #define TCP_MSS 1500
+#define LWIP_DEBUG
+#define IGMP_DEBUG LWIP_DBG_ON|LWIP_DBG_LEVEL_ALL
 
 #endif /* __LWIP_LWIPOPTS_H__ */

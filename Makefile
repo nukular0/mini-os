@@ -22,11 +22,12 @@ include minios.mk
 # CFLAGS += -DBLKTEST_WRITE
 
 # Define some default flags for linking.
-LDLIBS := 
+LDLIBS := -nostdlib 
 APP_LDLIBS := 
 LDARCHLIB := -L$(OBJ_DIR)/$(TARGET_ARCH_DIR) -l$(ARCH_LIB_NAME)
 LDFLAGS_FINAL := -T $(TARGET_ARCH_DIR)/minios-$(MINIOS_TARGET_ARCH).lds $(ARCH_LDFLAGS_FINAL)
 
+#LDLIBS += `$(CC) -print-libgcc-file-name` -L $(shell dirname $(shell $(CXX) --print-file-name=libgcc.a)) -lgcc -lc -lgcc -lgcc_eh
 # Prefix for global API names. All other symbols are localised before
 # linking with EXTRA_OBJS.
 GLOBAL_PREFIX := xenos_
@@ -41,14 +42,13 @@ src-$(CONFIG_BLKFRONT) += blkfront.c
 src-$(CONFIG_TPMFRONT) += tpmfront.c
 src-$(CONFIG_TPM_TIS) += tpm_tis.c
 src-$(CONFIG_TPMBACK) += tpmback.c
-#src-y += daytime.c
-#src-y += udpecho.c
-#src-y += udpecho-client.c
-#~ src-y += vgpiofront.c
+src-y += vgpiofront.c
 src-y += vcanfront.c
 #~ src-y += drivertest.c
-src-y += cantest.c
-#~ src-y += sensorvm.c
+#~ src-y += cantest.c
+src-y += sensorvm.c
+#src-y += daytime.c
+#~ src-y += udpecho.c
 src-y += events.c
 src-$(CONFIG_FBFRONT) += fbfront.c
 src-y += gntmap.c
@@ -82,6 +82,8 @@ src-$(CONFIG_CONSFRONT) += console/xenbus.c
 # The common mini-os objects to build.
 APP_OBJS :=
 OBJS := $(patsubst %.c,$(OBJ_DIR)/%.o,$(src-y))
+OBJS += $(patsubst %.cc,$(OBJ_DIR)/%.o,$(src-cxx))
+OBJS += $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(src-cxx-cpp)) 
 
 .PHONY: default
 default: $(OBJ_DIR)/$(TARGET)
@@ -176,6 +178,7 @@ clean:	arch_clean
 		rm -f $$dir/*.o; \
 	done
 	rm -f include/list.h
+	rm -f pSomeIP/*.o
 	rm -f $(OBJ_DIR)/*.o *~ $(OBJ_DIR)/core $(OBJ_DIR)/$(TARGET).elf $(OBJ_DIR)/$(TARGET).raw $(OBJ_DIR)/$(TARGET) $(OBJ_DIR)/$(TARGET).gz
 	find . $(OBJ_DIR) -type l | xargs rm -f
 	$(RM) $(OBJ_DIR)/lwip.a $(LWO)

@@ -1,0 +1,24 @@
+/*
+ * iostream
+ *
+ *  Created on: 21.11.2016
+ *      Author: hendrik
+ */
+
+#ifndef INCLUDE_IOSTREAM_
+#define INCLUDE_IOSTREAM_
+
+#include <XENOutputStream.h>
+
+namespace std {
+
+
+// Newline
+extern OutputStream& endl (OutputStream& os);
+
+extern XENOutputStream cout;
+
+
+}
+
+#endif /* INCLUDE_IOSTREAM_ */

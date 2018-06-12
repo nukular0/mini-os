@@ -4,8 +4,12 @@
 
 debug = y
 
+GCC_INSTALL = $(shell LANG=C gcc -print-search-dirs | sed -n -e 's/install: \(.*\)/\1/p')
+
 # Define some default flags.
 # NB. '-Wcast-qual' is nasty, so I omitted it.
+DEF_CFLAGS += -nostdinc
+DEF_CFLAGS += -isystem $(GCC_INSTALL)include
 DEF_CFLAGS += -fno-builtin -Wall -Werror -Wredundant-decls -Wno-format -Wno-redundant-decls -Wformat
 DEF_CFLAGS += $(call cc-option,$(CC),-fno-stack-protector,)
 DEF_CFLAGS += $(call cc-option,$(CC),-fgnu89-inline)
@@ -15,8 +19,17 @@ DEF_CPPFLAGS += -D__XEN_INTERFACE_VERSION__=$(XEN_INTERFACE_VERSION)
 DEF_ASFLAGS += -D__ASSEMBLY__
 DEF_LDFLAGS +=
 
+DEF_CXXFLAGS += -nostdinc
+DEF_CXXFLAGS += -isystem $(GCC_INSTALL)include
+DEF_CXXFLAGS += -fno-builtin -Wall -Werror -Wredundant-decls -Wno-format -Wno-redundant-decls -Wformat
+DEF_CXXFLAGS += -Wpointer-arith -Winline -fpermissive -fno-stack-protector  -Wno-non-virtual-dtor -fno-rtti -fno-unwind-tables -fno-exceptions -fnon-call-exceptions -fno-use-cxa-atexit 
+
+# Enable c++11 support
+DEF_CXXFLAGS += -std=c++11
+
 ifeq ($(debug),y)
 DEF_CFLAGS += -g
+DEF_CXXFLAGS += -g
 #DEF_CFLAGS += -DMM_DEBUG
 #DEF_CFLAGS += -DFS_DEBUG
 #DEF_CFLAGS += -DLIBC_DEBUG
@@ -28,12 +41,14 @@ endif
 
 # Make the headers define our internal stuff
 DEF_CFLAGS += -D__INSIDE_MINIOS__
+DEF_CXXFLAGS += -D__INSIDE_MINIOS__
 
 # Build the CFLAGS and ASFLAGS for compiling and assembling.
 # DEF_... flags are the common mini-os flags,
 # ARCH_... flags may be defined in arch/$(TARGET_ARCH_FAM/rules.mk
 CFLAGS := $(DEF_CFLAGS) $(ARCH_CFLAGS) $(DEFINES-y)
 CPPFLAGS := $(DEF_CPPFLAGS) $(ARCH_CPPFLAGS)
+CXXFLAGS := $(DEF_CXXFLAGS) $(ARCH_CFLAGS)
 ASFLAGS := $(DEF_ASFLAGS) $(ARCH_ASFLAGS) $(DEFINES-y)
 LDFLAGS := $(DEF_LDFLAGS) $(ARCH_LDFLAGS)
 
@@ -70,6 +85,19 @@ $(OBJ_DIR)/%.o: %.c $(HDRS) Makefile $(EXTRA_DEPS)
 
 $(OBJ_DIR)/%.o: %.S $(HDRS) Makefile $(EXTRA_DEPS) $(ARCH_AS_DEPS)
 	$(CC) $(ASFLAGS) $(CPPFLAGS) -c $< -o $@
+
+
+$(OBJ_DIR)/%.o: %.cpp $(HDRS) Makefile $(EXTRA_DEPS)
+	@echo "CXX	$< to	$@"
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/%.o: %.cc $(HDRS) Makefile $(EXTRA_DEPS)
+	@echo "CXX	$< to	$@"
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/%.o: %.S $(HDRS) Makefile $(EXTRA_DEPS)
+	$(CC) $(ASFLAGS) $(CPPFLAGS) -c $< -o $@
+
 
 
 

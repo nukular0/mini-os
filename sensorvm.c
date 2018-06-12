@@ -43,10 +43,10 @@ struct semaphore		work_available_sema;
 
 
 struct sensorvm_work_item {
-	TAILQ_ENTRY(sensorvm_work_item) tailq;
+	MINIOS_TAILQ_ENTRY(struct sensorvm_work_item) tailq;
 	struct can_frame				cf;
 };
-TAILQ_HEAD(sensorvm_work_q, sensorvm_work_item);
+MINIOS_TAILQ_HEAD(sensorvm_work_q, struct sensorvm_work_item);
 
 struct sensorvm_work_q work_queue;
 
@@ -125,7 +125,7 @@ void can_rx_handler(struct can_frame *cf)
 	
 	memcpy(&item->cf, cf, sizeof(*cf));
 	
-	TAILQ_INSERT_TAIL(&work_queue, item, tailq);
+	MINIOS_TAILQ_INSERT_TAIL(&work_queue, item, tailq);
 	
 	up(&work_available_sema);
 }
@@ -252,10 +252,10 @@ void work(void)
 	unsigned long flags;
 	struct sensorvm_work_item *item;
 		
-	while (!TAILQ_EMPTY(&work_queue)) {
+	while (!MINIOS_TAILQ_EMPTY(&work_queue)) {
 		local_irq_save(flags);
-		item = TAILQ_FIRST(&work_queue);
-		TAILQ_REMOVE(&work_queue, item, tailq);
+		item = MINIOS_TAILQ_FIRST(&work_queue);
+		MINIOS_TAILQ_REMOVE(&work_queue, item, tailq);
 		local_irq_restore(flags);	
 
 		handle_can_frame(&item->cf);
@@ -284,7 +284,7 @@ void run_client(void *p)
 	}
 	
 	init_SEMAPHORE(&work_available_sema, 0);
-	TAILQ_INIT(&work_queue);
+	MINIOS_TAILQ_INIT(&work_queue);
 	
 	
 	while(1){

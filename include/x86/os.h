@@ -514,29 +514,29 @@ static inline void wrmsrl(unsigned msr, uint64_t val)
 struct __synch_xchg_dummy { unsigned long a[100]; };
 #define __synch_xg(x) ((struct __synch_xchg_dummy *)(x))
 
-#define synch_cmpxchg(ptr, old, new) \
+#define synch_cmpxchg(ptr, old, newv) \
 ((__typeof__(*(ptr)))__synch_cmpxchg((ptr),\
                                      (unsigned long)(old), \
-                                     (unsigned long)(new), \
+                                     (unsigned long)(newv), \
                                      sizeof(*(ptr))))
 
 static inline unsigned long __synch_cmpxchg(volatile void *ptr,
         unsigned long old,
-        unsigned long new, int size)
+        unsigned long newv, int size)
 {
     unsigned long prev;
     switch (size) {
         case 1:
             __asm__ __volatile__("lock; cmpxchgb %b1,%2"
                     : "=a"(prev)
-                    : "q"(new), "m"(*__synch_xg(ptr)),
+                    : "q"(newv), "m"(*__synch_xg(ptr)),
                     "0"(old)
                     : "memory");
             return prev;
         case 2:
             __asm__ __volatile__("lock; cmpxchgw %w1,%2"
                     : "=a"(prev)
-                    : "r"(new), "m"(*__synch_xg(ptr)),
+                    : "r"(newv), "m"(*__synch_xg(ptr)),
                     "0"(old)
                     : "memory");
             return prev;
@@ -544,14 +544,14 @@ static inline unsigned long __synch_cmpxchg(volatile void *ptr,
         case 4:
             __asm__ __volatile__("lock; cmpxchgl %k1,%2"
                     : "=a"(prev)
-                    : "r"(new), "m"(*__synch_xg(ptr)),
+                    : "r"(newv), "m"(*__synch_xg(ptr)),
                     "0"(old)
                     : "memory");
             return prev;
         case 8:
             __asm__ __volatile__("lock; cmpxchgq %1,%2"
                     : "=a"(prev)
-                    : "r"(new), "m"(*__synch_xg(ptr)),
+                    : "r"(newv), "m"(*__synch_xg(ptr)),
                     "0"(old)
                     : "memory");
             return prev;
@@ -559,7 +559,7 @@ static inline unsigned long __synch_cmpxchg(volatile void *ptr,
         case 4:
             __asm__ __volatile__("lock; cmpxchgl %1,%2"
                     : "=a"(prev)
-                    : "r"(new), "m"(*__synch_xg(ptr)),
+                    : "r"(newv), "m"(*__synch_xg(ptr)),
                     "0"(old)
                     : "memory");
             return prev;

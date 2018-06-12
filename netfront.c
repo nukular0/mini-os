@@ -130,17 +130,16 @@ moretodo:
 #ifdef HAVE_LIBC
 	    if (dev->netif_rx == NETIF_SELECT_RX) {
 		int len = rx->status;
-		ASSERT(current == main_thread);
+		ASSERT(current_thread == main_thread);
 		if (len > dev->len)
 		    len = dev->len;
 		memcpy(dev->data, page+rx->offset, len);
 		dev->rlen = len;
 		/* No need to receive the rest for now */
 		dobreak = 1;
-	    } else {
+	    } else 
 #endif
-		dev->netif_rx(page+rx->offset,rx->status);
-        }
+		dev->netif_rx(page+rx->offset,rx->status);        
         }
     }
     dev->rx.rsp_cons=cons;
@@ -311,7 +310,6 @@ struct netfront_dev *init_netfront(char *_nodename, void (*thenetif_rx)(unsigned
     struct netfront_dev *dev;
     static int netfrontends = 0;
 
-    
     if (!_nodename)
         snprintf(nodename, sizeof(nodename), "device/vif/%d", netfrontends);
     else {
@@ -555,7 +553,7 @@ static struct netfront_dev *_init_netfront(struct netfront_dev *dev, unsigned ch
 
     for(i=0;i<NET_RX_RING_SIZE;i++)
     {
-        //* TODO: that's a lot of memory 
+        // TODO: that's a lot of memory 
         //dev->rx_buffers[i].page = (char*)alloc_page();
     }
 
@@ -564,11 +562,10 @@ static struct netfront_dev *_init_netfront(struct netfront_dev *dev, unsigned ch
         evtchn_alloc_unbound(dev->dom, netfront_select_handler, dev, &dev->evtchn);
     else
 #endif
-      evtchn_alloc_unbound(dev->dom, netfront_handler, dev, &dev->evtchn);
+    evtchn_alloc_unbound(dev->dom, netfront_handler, dev, &dev->evtchn);
 
     netfront_evtchn = dev->evtchn;
 
-    //printk("After evtchn_alloc ectchn %d\n", dev->evtchn);
 
     txs = (struct netif_tx_sring *) alloc_page();
     rxs = (struct netif_rx_sring *) alloc_page();
@@ -578,7 +575,7 @@ static struct netfront_dev *_init_netfront(struct netfront_dev *dev, unsigned ch
     SHARED_RING_INIT(rxs);
     FRONT_RING_INIT(&dev->tx, txs, PAGE_SIZE);
     FRONT_RING_INIT(&dev->rx, rxs, PAGE_SIZE);
-    
+
     dev->tx_ring_ref = gnttab_grant_access(dev->dom,virt_to_mfn(txs),0);
     dev->rx_ring_ref = gnttab_grant_access(dev->dom,virt_to_mfn(rxs),0);
 
@@ -649,7 +646,6 @@ abort_transaction:
     goto error;
 
 done:
-
     snprintf(path, sizeof(path), "%s/mac", dev->nodename);
     msg = xenbus_read(XBT_NIL, path, &dev->mac);
 
@@ -660,8 +656,8 @@ done:
 //    gettimeofday(&tv2, NULL);
  //   printk("Time for creating xenstore nodes: (s=%ld, us=%ld)\n",tv2.tv_sec-tv.tv_sec,tv2.tv_usec-tv.tv_usec);
 
-//    printk("backend at %s\n",dev->backend);
-//    printk("mac is %s\n",dev->mac);
+    printk("backend at %s\n",dev->backend);
+    printk("mac is %s\n",dev->mac);
 
     {
         XenbusState state;
@@ -674,7 +670,7 @@ done:
         xenbus_watch_path_token(XBT_NIL, path, path, &dev->events);
 
         err = NULL;
-nf_sc_again:
+        nf_sc_again:
         state = xenbus_read_integer(path);
         while (err == NULL && state < XenbusStateConnected) {
             err = xenbus_wait_for_state_change(path, &state, &dev->events);
@@ -792,12 +788,27 @@ void suspend_netfront(void)
 {
     netfront_suspended = 1;
 //    shutdown_netfront(net_device, SHUTDOWN_suspend);
+    
 }
 
 void resume_netfront(int rc)
 {
-    if (!rc)
-        _init_netfront(net_device, NULL, NULL);
+    int i;
+    if (!rc) {
+	//Free gnttab references:
+
+	 gnttab_end_access(net_device->rx_ring_ref);
+         gnttab_end_access(net_device->tx_ring_ref);
+
+         for(i=0;i<NET_RX_RING_SIZE;i++) {
+         gnttab_end_access(net_device->rx_buffers[i].gref);
+         }
+
+         for(i=0;i<NET_TX_RING_SIZE;i++) {
+         gnttab_end_access(net_device->tx_buffers[i].gref);
+         }
+         _init_netfront(net_device, NULL, NULL);
+    }
     netfront_suspended = 0;
 }
 
@@ -812,15 +823,13 @@ void init_rx_buffers(struct netfront_dev *dev)
     {
         struct net_buffer* buf = &dev->rx_buffers[requeue_idx];
         req = RING_GET_REQUEST(&dev->rx, requeue_idx);
-
-        buf->gref = req->gref = 
+        buf->gref = req->gref =
             gnttab_grant_access(dev->dom,virt_to_mfn(buf->page),0);
 
         req->id = requeue_idx;
 
         requeue_idx++;
     }
-
     dev->rx.req_prod_pvt = requeue_idx;
 
     RING_PUSH_REQUESTS_AND_CHECK_NOTIFY(&dev->rx, notify);

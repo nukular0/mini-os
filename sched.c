@@ -63,6 +63,8 @@ static int threads_started;
 
 struct thread *main_thread;
 
+struct thread *current_thread;
+
 void schedule(void)
 {
     struct thread *prev, *next, *thread, *tmp;
@@ -73,7 +75,7 @@ void schedule(void)
         BUG();
     }
 
-    prev = current;
+    prev = current_thread;
     local_irq_save(flags); 
 
     if (in_callback) {
@@ -117,7 +119,7 @@ void schedule(void)
     local_irq_restore(flags);
     /* Interrupting the switch is equivalent to having the next thread
        inturrupted at the return instruction. And therefore at safe point. */
-    current = next;
+    current_thread = next;
     if(prev != next) switch_threads(prev, next);
 
     MINIOS_TAILQ_FOREACH_SAFE(thread, &exited_threads, thread_list, tmp)
@@ -191,7 +193,7 @@ struct _reent *__getreent(void)
 void exit_thread(void)
 {
     unsigned long flags;
-    struct thread *thread = current;
+    struct thread *thread = current_thread;
     printk("Thread \"%s\" exited.\n", thread->name);
     local_irq_save(flags);
     /* Remove from the thread list */
@@ -232,7 +234,7 @@ void idle_thread_fn(void *unused)
 {
     threads_started = 1;
     while (1) {
-        block(current);
+        block(current_thread);
         schedule();
     }
 }
@@ -245,7 +247,7 @@ void init_sched(void)
     _REENT_INIT_PTR((&callback_reent))
 #endif
     idle_thread = create_thread("Idle", idle_thread_fn, NULL);
-    current = idle_thread;
+    current_thread = idle_thread;
 }
 
 /*

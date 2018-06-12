@@ -37,11 +37,11 @@ static void free_vgpiofront(struct vgpiofront_dev *dev)
     unbind_evtchn(dev->comm_evtchn);
 
 	// free irq_list
-	// same as LIST_FOREACH_SAFE(elm, &dev->irq_list, list, telm), but that macro does not exist for some reason
-	for ((elm) = LIST_FIRST((&dev->irq_list)); (elm) && ((telm) = LIST_NEXT((elm), list), 1); (elm) = (telm)){
+	// same as MINIOS_LIST_FOREACH_SAFE(elm, &dev->irq_list, list, telm), but that macro does not exist for some reason
+	for ((elm) = MINIOS_LIST_FIRST((&dev->irq_list)); (elm) && ((telm) = MINIOS_LIST_NEXT((elm), list), 1); (elm) = (telm)){
 		mask_evtchn(elm->port);
 		unbind_evtchn(elm->port);
-		LIST_REMOVE(elm, list);
+		MINIOS_LIST_REMOVE(elm, list);
 		free(elm);	
 		
 	}
@@ -335,7 +335,7 @@ struct vgpiofront_dev* init_vgpiofront(const char* _nodename)
 	dev->nodename = strdup(nodename);
   
 	/* Init irq List */
-	LIST_INIT(&dev->irq_list);
+	MINIOS_LIST_INIT(&dev->irq_list);
 
 	/* Get backend domid */
 	snprintf(path, 512, "%s/backend-id", dev->nodename);
@@ -545,7 +545,7 @@ int gpio_request_irq(struct vgpiofront_dev *dev, unsigned gpio, void (*handler),
 	pin_irq->pin = gpio;
 	pin_irq->handler = handler;
 	pin_irq->port = _irq_evtchn;
-	LIST_INSERT_HEAD(&dev->irq_list, pin_irq, list);
+	MINIOS_LIST_INSERT_HEAD(&dev->irq_list, pin_irq, list);
 	
 	return 0;
 }
@@ -561,7 +561,7 @@ void gpio_free_irq(struct vgpiofront_dev *dev, unsigned gpio)
 	
 	
 	// get event channel port for gpio from dev's irq_list
-	LIST_FOREACH(tmp, &dev->irq_list, list){
+	MINIOS_LIST_FOREACH(tmp, &dev->irq_list, list){
 		if(tmp->pin == gpio){
 			_port = tmp->port;
 			break;
@@ -583,6 +583,6 @@ void gpio_free_irq(struct vgpiofront_dev *dev, unsigned gpio)
 	unbind_evtchn(_port);
 	
 	// remove irq from dev's irq_list and free memory
-	LIST_REMOVE(tmp, list);
+	MINIOS_LIST_REMOVE(tmp, list);
 	free(tmp);
 }

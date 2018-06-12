@@ -95,6 +95,31 @@ void resume_frontends(int rc)
 #endif
 }
 
+
+void suspend_handler(evtchn_port_t port, struct pt_regs *regs, void *data)
+{
+//    printk("Suspend Handler called via event channel!\n");
+
+    notify_remote_via_evtchn(suspend_evtchn);
+//    local_irq_enable();
+    up(&suspend_sem);
+
+}
+
+void setup_suspend_evtchn(void)
+{
+    char msg[3];
+
+    evtchn_alloc_unbound(0, suspend_handler, NULL, &suspend_evtchn);
+    
+    snprintf(msg, sizeof(msg), "%u", suspend_evtchn);
+    xenbus_write(XBT_NIL, "device/suspend/event-channel", msg);
+
+    unmask_evtchn(suspend_evtchn);
+}
+
+
+
 void suspend_core_devices(void)
 {
     suspend_xenbus();   
@@ -128,27 +153,10 @@ void resume_core_devices(int err)
     
     if (!err)
         resume_xenbus(err);
+    if(!err)
+	setup_suspend_evtchn();
 }
 
-void suspend_handler(evtchn_port_t port, struct pt_regs *regs, void *data)
-{
-    printk("Suspend Handler called via event channel!\n");
-    notify_remote_via_evtchn(suspend_evtchn);
-    local_irq_enable();
-    up(&suspend_sem);
-}
-
-void setup_suspend_evtchn(void)
-{
-    char msg[3];
-
-    evtchn_alloc_unbound(0, suspend_handler, NULL, &suspend_evtchn);
-    
-    snprintf(msg, sizeof(msg), "%u", suspend_evtchn);
-    xenbus_write(XBT_NIL, "device/suspend/event-channel", msg);
-
-    unmask_evtchn(suspend_evtchn);
-}
 
 void suspend_thread_func(void *p)
 {
@@ -165,9 +173,9 @@ void do_suspend(void)
 {
             unsigned long start_info_mfn = virt_to_mfn(xen_info);
             int rc;
-            struct timeval tv_start, tv_end;
-
-            gettimeofday(&tv_start, NULL);            
+  //          struct timeval tv_start, tv_end;
+	
+//            gettimeofday(&tv_start, NULL);            
 
             suspend_frontends();
             suspend_core_devices();
@@ -193,8 +201,8 @@ void do_suspend(void)
 
             resume_core_devices(rc);
             resume_frontends(rc);  
-            gettimeofday(&tv_end, NULL);
-            printk(">> Suspend delay time: (s=%ld,us=%ld)", tv_end.tv_sec-tv_start.tv_sec, tv_end.tv_usec-tv_start.tv_usec);
+//            gettimeofday(&tv_end, NULL);
+//            printk(">> Suspend delay time: (s=%ld,us=%ld)", tv_end.tv_sec-tv_start.tv_sec, tv_end.tv_usec-tv_start.tv_usec);
 }
 /*static void shutdown_thread(void *p)
 {
@@ -243,7 +251,6 @@ static void shutdown_thread(void *p)
    for(;;)
    {
         xenbus_wait_for_watch(NULL);
-
 	    err = xenbus_read(XBT_NIL, path, &shutdown);
 	    if(err)
 	    {
