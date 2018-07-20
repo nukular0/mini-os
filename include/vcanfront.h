@@ -76,4 +76,7 @@ void vcanfront_send(struct vcanfront_dev *dev, struct can_frame *cf);
 int vcanfront_register_rx_handler(struct vcanfront_dev *dev, void (*rx_handler)(struct can_frame*));
 void vcanfront_unregister_rx_handler(struct vcanfront_dev *dev);
 
+void resume_vcanfront(int rc);
+void suspend_vcanfront(void);
+
 #endif

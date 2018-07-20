@@ -42,8 +42,10 @@
 #include <mini-os/blkfront.h>
 #include <mini-os/fbfront.h>
 #include <mini-os/pcifront.h>
+#include <mini-os/vcanfront.h>
 #include <mini-os/xmalloc.h>
 #include <mini-os/semaphore.h>
+#include <mini-os/headlight_vm.h>
 #include <fcntl.h>
 #include <xen/features.h>
 #include <xen/version.h>
@@ -83,8 +85,19 @@ __attribute__((weak)) void app_shutdown(unsigned reason)
 
 void suspend_frontends(void)
 {
+#ifdef CONFIG_VCANFRONT
+   suspend_vcanfront();
+#endif
 #ifdef CONFIG_NETFRONT
    suspend_netfront();
+#endif
+
+}
+
+void suspend_apps(void)
+{
+#ifdef CONFIG_APP_HEADLIGHT
+	suspend_headlight_vm();
 #endif
 }
 
@@ -93,8 +106,19 @@ void resume_frontends(int rc)
 #ifdef CONFIG_NETFRONT
     resume_netfront(rc);
 #endif
+
+#ifdef CONFIG_VCANFRONT
+    resume_vcanfront(rc);
+#endif
+
 }
 
+void resume_apps(int rc)
+{
+#ifdef CONFIG_APP_HEADLIGHT
+	resume_headlight_vm(rc);
+#endif
+}
 
 void suspend_handler(evtchn_port_t port, struct pt_regs *regs, void *data)
 {
@@ -126,7 +150,7 @@ void suspend_core_devices(void)
  
     suspend_gnttab();
     
-    suspend_console();
+    //~ suspend_console();
 
     suspend_time();
 
@@ -145,16 +169,17 @@ void resume_core_devices(int err)
     
     local_irq_enable();
     
-    resume_console();
+    //~ resume_console();
 
     resume_time();
     
     resume_gnttab();
     
-    if (!err)
-        resume_xenbus(err);
+    //~ if (!err)
+    resume_xenbus(err);
+    
     if(!err)
-	setup_suspend_evtchn();
+		setup_suspend_evtchn();
 }
 
 
@@ -173,12 +198,14 @@ void do_suspend(void)
 {
             unsigned long start_info_mfn = virt_to_mfn(xen_info);
             int rc;
-  //          struct timeval tv_start, tv_end;
-	
-//            gettimeofday(&tv_start, NULL);            
+            struct timeval tv_start, tv_end;
 
+	
+            gettimeofday(&tv_start, NULL);            
+            suspend_apps();
             suspend_frontends();
             suspend_core_devices();
+            
 
 
             //unbind_evtchn(suspend_evtchn);
@@ -201,8 +228,11 @@ void do_suspend(void)
 
             resume_core_devices(rc);
             resume_frontends(rc);  
-//            gettimeofday(&tv_end, NULL);
-//            printk(">> Suspend delay time: (s=%ld,us=%ld)", tv_end.tv_sec-tv_start.tv_sec, tv_end.tv_usec-tv_start.tv_usec);
+            resume_apps(rc);
+            gettimeofday(&tv_end, NULL);
+  
+            
+            //~ printk(">> Suspend delay time: (s=%lu,us=%lu)\n", tv_end.tv_sec-tv_start.tv_sec, tv_end.tv_usec-tv_start.tv_usec);
 }
 /*static void shutdown_thread(void *p)
 {

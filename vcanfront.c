@@ -23,6 +23,10 @@
 
 s_time_t t1, t2, us, ns;
 
+struct vcanfront_dev* vcandev;
+
+evtchn_port_t vcanfront_evtchn = -1;
+
 static void free_vcanfront(struct vcanfront_dev *dev)
 {
     mask_evtchn(dev->comm_evtchn);
@@ -40,6 +44,8 @@ static void free_vcanfront(struct vcanfront_dev *dev)
     free(dev);
 }
 
+uint32_t req_counter = 0;
+
 int vcanfront_send_request(struct vcanfront_dev *dev, vcan_request_t *req){
 	RING_IDX i;
 	vcan_request_t *_req;
@@ -54,9 +60,15 @@ int vcanfront_send_request(struct vcanfront_dev *dev, vcan_request_t *req){
 
 		wmb();
 		RING_PUSH_REQUESTS_AND_CHECK_NOTIFY(&dev->ring, notify);
+		//~ VCAN_DEBUG("req_counter: %d\n", req_counter++);
 		if(notify) 
 		{
 			notify_remote_via_evtchn(dev->comm_evtchn);    
+			//~ VCAN_DEBUG("notified (0x%X)\n", req->frame.can_id);
+			
+		}
+		else{
+			//~ VCAN_DEBUG("not notified (0x%X)\n", req->frame.can_id);
 		}
 	}
 	else{
@@ -74,6 +86,9 @@ void vcanfront_handler(evtchn_port_t port, struct pt_regs *regs, void *data)
 	vcan_response_t *rsp;
 	int more;
 	struct vcanfront_dev *dev = (struct vcanfront_dev*) data;
+	
+	//~ if(vcanfront_suspended)
+		//~ return;
 
 moretodo:
 	rp = dev->ring.sring->rsp_prod;
@@ -253,6 +268,7 @@ static int vcanfront_connect(struct vcanfront_dev* dev)
 	  VCANFRONT_ERR("Unable to allocate comm_event channel\n");
 	  goto error_postmap;
 	}
+	vcanfront_evtchn = dev->comm_evtchn;
 	unmask_evtchn(dev->comm_evtchn);
 	//~ VCAN_DEBUG("comm_event channel is %lu\n", (unsigned long) dev->comm_evtchn);
 
@@ -284,47 +300,36 @@ error:
    return -1;
 }
 
-/**
- * Call this from the application / thread.
- *  - Reads id of backend domain from xenstore
- *  - Reads xenstore path of backend from xenstore
- *  - connects frontend: calls vcanfront_connect()
- *  - waits for backend to connect
- *  --> initialization of frontend done
- */
-struct vcanfront_dev* init_vcanfront(const char* _nodename)
+static struct vcanfront_dev* _alloc_vcanfront(const char* _nodename)
 {
 	struct vcanfront_dev* dev;
 	const char* nodename;
-	char path[512];
-	char* value;
-	char* err;
-	unsigned long long ival;
+
 
 	printk("============= Init VCAN Front ================\n");
 
 	dev = malloc(sizeof(*dev));
+	if(!dev)
+		return NULL;
+	
 	memset(dev, 0, sizeof(*dev));
 
 	/* Set node name */
 	nodename = _nodename ? _nodename : "device/vcan/0";
 	dev->nodename = strdup(nodename);
-  
+	
+	return dev;
+}
+
+static struct vcanfront_dev* _init_vcanfront(struct vcanfront_dev* dev)
+{
+	char *err;
+	char path[512];
+	
 	/* Get backend domid */
 	snprintf(path, 512, "%s/backend-id", dev->nodename);
-	if((err = xenbus_read(XBT_NIL, path, &value))) {
-	  VCANFRONT_ERR("Unable to read %s during vcanfront initialization! error = %s\n", path, err);
-	  free(err);
-	  goto error;
-	}
-	if(sscanf(value, "%llu", &ival) != 1) {
-	  VCANFRONT_ERR("%s has non-integer value (%s)\n", path, value);
-	  free(value);
-	  goto error;
-	}
-	free(value);
-	dev->bedomid = ival;
-	VCANFRONT_LOG("backend dom-id is %llu\n", ival);
+	dev->bedomid = xenbus_read_integer(path);
+	VCANFRONT_LOG("backend dom-id is %d\n", dev->bedomid);
 
 	/* Get backend xenstore path */
 	snprintf(path, 512, "%s/backend", dev->nodename);
@@ -350,6 +355,28 @@ struct vcanfront_dev* init_vcanfront(const char* _nodename)
 error:
    shutdown_vcanfront(dev);
    return NULL;
+}
+
+/**
+ * Call this from the application / thread.
+ *  - Reads id of backend domain from xenstore
+ *  - Reads xenstore path of backend from xenstore
+ *  - connects frontend: calls vcanfront_connect()
+ *  - waits for backend to connect
+ *  --> initialization of frontend done
+ */
+struct vcanfront_dev* init_vcanfront(const char* nodename)
+{
+    struct vcanfront_dev* dev;
+    
+    dev = _alloc_vcanfront(nodename);
+    
+    if(!dev)
+		return NULL;
+    
+    vcandev = dev;
+    
+	return _init_vcanfront(dev);
 }
 
 void shutdown_vcanfront(struct vcanfront_dev* dev)
@@ -418,4 +445,24 @@ int vcanfront_register_rx_handler(struct vcanfront_dev *dev, void (*rx_handler)(
 
 void vcanfront_unregister_rx_handler(struct vcanfront_dev *dev){
 	dev->rx_handler = NULL;
+}
+
+void suspend_vcanfront(void)
+{
+    mask_evtchn(vcanfront_evtchn);
+}
+
+void resume_vcanfront(int rc)
+{
+	
+    // rc == 0: resumed on a new host, so we need to 
+    // connect to the new backend
+    if (!rc) {	
+		_init_vcanfront(vcandev);
+    }
+    // _init_vcanfront() will already unmask the evtchnS
+    // so we only need to do it if we are resumed on the same host
+    else{
+		unmask_evtchn(vcanfront_evtchn);
+	}
 }

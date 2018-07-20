@@ -28,6 +28,7 @@
 
 extern uint32_t console_evtchn;
 
+
 /* this represents a event handler. Chaining or sharing is not allowed */
 typedef struct _ev_action_t {
 	evtchn_handler_t handler;
@@ -49,6 +50,11 @@ void unbind_all_ports(void)
 
     for ( i = 0; i < NR_EVS; i++ )
     {
+        #ifdef CONFIG_VCANFRONT
+		if( i == vcanfront_evtchn )
+			continue;
+		#endif
+		
         #ifdef CONFIG_NETFRONT
         if ( i == console_evtchn || i == xenbus_evtchn || i == netfront_evtchn || i == suspend_evtchn )
         #else
