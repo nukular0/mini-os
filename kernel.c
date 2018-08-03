@@ -176,7 +176,7 @@ void resume_core_devices(int err)
     resume_gnttab();
     
     //~ if (!err)
-    resume_xenbus(err);
+	resume_xenbus(err);
     
     if(!err)
 		setup_suspend_evtchn();

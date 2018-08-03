@@ -17,7 +17,7 @@
 #include <mini-os/time.h>
 #include <mini-os/lib.h>
 #include <mini-os/semaphore.h>
-//~ #include <vgpiofront.h>
+#include <vgpiofront.h>
 //~ #include <vcanfront.h>
 
 

@@ -88,9 +88,9 @@ void print_can_frame(char* prefix, struct can_frame *cf)
 		return;
 	}
 	
-	can_frame_remove_flags(cf);
+	//~ can_frame_remove_flags(cf);
 	 
-	tprintk("%s%8X [%d]", prefix, cf->can_id, cf->can_dlc);
+	tprintk("%s%8X [%d]", prefix, cf->can_id & 0x1FFFFFFF, cf->can_dlc);
 	for(; i < cf->can_dlc; i++){
 		printk(" %02X ", cf->data[i]);			
 	}
@@ -118,6 +118,7 @@ void print_can_frame(char* prefix, struct can_frame *cf)
 */
 void can_rx_handler(struct can_frame *cf)
 {
+	unsigned long flags;
 	struct sensorvm_work_item *item = (struct sensorvm_work_item *)malloc(sizeof(struct sensorvm_work_item));
 	
 	if(!item)
@@ -125,7 +126,9 @@ void can_rx_handler(struct can_frame *cf)
 	
 	memcpy(&item->cf, cf, sizeof(*cf));
 	
+	local_irq_save(flags);
 	MINIOS_TAILQ_INSERT_TAIL(&work_queue, item, tailq);
+	local_irq_restore(flags);
 	
 	up(&work_available_sema);
 }
@@ -243,7 +246,7 @@ again:
 		
 	}
 	else{
-		print_can_frame("Not a sensor message: ", cf);
+		//~ print_can_frame("Not a sensor message: ", cf);
 	}
 }
 
@@ -259,7 +262,7 @@ void work(void)
 		local_irq_restore(flags);	
 
 		handle_can_frame(&item->cf);
-
+		//~ mb();
 		free(item);
     }
 
