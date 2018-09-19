@@ -104,7 +104,8 @@ int main (int argc, char *argv[])
  	end = ( ((unsigned long)cycles_high1 << 32) | cycles_low1 );
 
 	sprintf(buf, "%s %ld\0", buf, end-start);
-        if(sendto(s,buf,BUFLEN, 0, &si_other, slen)==-1) serror("sendto");
+	
+	if(sendto(s,buf,BUFLEN, 0, &si_other, slen)==-1) serror("sendto");
 
     err = xenbus_transaction_start(&xbt);
     if (err) {

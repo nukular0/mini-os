@@ -4,21 +4,20 @@
 #include <console.h>
 #include <mini-os/xenbus.h>
 
-#include <netfront.h>
-#include <lwip/api.h>
 
 #include <mini-os/os.h>
 #include <mini-os/xenbus.h>
 #include <mini-os/events.h>
 #include <errno.h>
+#include <netfront.h>
+#include <lwip/api.h>
 #include <xen/io/netif.h>
 #include <mini-os/gnttab.h>
 #include <mini-os/xmalloc.h>
 #include <mini-os/time.h>
 #include <mini-os/lib.h>
 #include <mini-os/semaphore.h>
-#include <vgpiofront.h>
-//~ #include <vcanfront.h>
+
 
 
 

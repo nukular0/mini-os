@@ -20,7 +20,13 @@
 #include <vgpiofront.h>
 
 
-unsigned long start_ts, end_ts;
+#define PIRQ 1
+#define REPS 1000
+#define FACTOR 1.1
+
+// Leave these here!! They are required by mini-os
+//~ unsigned cycles_low, cycles_high, cycles_low1, cycles_high1; 
+unsigned long t0, start_ts, end_ts;
 
 uint64_t ms, us, ns;
 
@@ -32,12 +38,39 @@ struct vgpiofront_dev *gpio_dev;
 //~ unsigned int gpioLED = 403;       		// Linux 403 = Up 37
 //~ unsigned int gpioButton = 404;       	// Linux 464 = Up 31
 unsigned int gpioIn = 404;       		// Linux 464 = Up 27
-unsigned int gpioOut = 464;				// Linux 430 = Up 29
-unsigned int gpioOutDom0 = 430;				// Linux 430 = Up 29
+unsigned int gpioOut = 430;				// Linux 430 = Up 29
 
 static void irq_handler(void);
+//~ static void button_handler(void);
 
 
+uint64_t c_start[REPS], c_set[REPS], c_irq[REPS];
+uint32_t rep = 0;
+
+static void logTimes(void)
+{
+	uint64_t min = 0xFFFFFFFFFFFFFF, max = 0, avg = 0;
+	unsigned i = 0;
+	uint64_t cycles;
+	
+	printk("vm_c_start,vm_c_set,vm_c_irq,vm_c_diff_set_irq\n");
+	for(; i < REPS; i++){
+		cycles = c_irq[i] - c_set[i];
+		if(cycles < min)
+			min = cycles;
+		if(cycles > max)
+			max = cycles;
+		avg += cycles;
+		printk("%lu,%lu,%lu,%lu\n", c_start[i], c_set[i], c_irq[i],cycles);
+		msleep(4);
+	}
+	
+	
+	avg /= REPS;
+	msleep(200);
+	printk("\nlogged %u elements: min %lu | max %lu | avg %lu\n", REPS, min, max, avg);
+	msleep(100);
+}
 
 
 void print_time_diff(char* prefix, unsigned long t1, unsigned long t2)
@@ -60,14 +93,21 @@ static inline uint64_t get_tsc(void)
 
 
 
+
 static void irq_handler()
 {
+	c_irq[rep++] = get_tsc();
 	up(&irq_sema);
 }
 
+static void pirq_handler(evtchn_port_t port, struct pt_regs *regs, void* data)
+{
+	printk("PIRQ!!!!\n");
+}
 
 void eval_irq(void)
 {
+	int i = 0;
 	gpio_request_irq(gpio_dev, gpioIn, &irq_handler, IRQF_TRIGGER_RISING);
 
 	msleep(200);
@@ -75,24 +115,53 @@ void eval_irq(void)
 	tprintk("eval IRQ\n\n");
 
 	
-	while(1){
+	for(; i < REPS; i++){
+
+		c_start[rep] = get_tsc();
+		gpio_set_value(gpio_dev, gpioOut, 1);     
+		c_set[rep] = get_tsc();
 
 		down(&irq_sema);
-		gpio_set_value(gpio_dev, gpioOut, 0);     
-		
-		msleep(1);
-		gpio_set_value(gpio_dev, gpioOut, 1);
+
+		gpio_set_value(gpio_dev, gpioOut, 0);
 				
+		mb();
 	}
 	
+	logTimes();
 	
+
+}
+
+static inline void eval_toggle(void)
+{
+	int set = 0;
+	int i = 0;
+	
+	tprintk("eval TOGGLE\n\n");
+	
+	
+	for(; i < REPS; i++){
+		c_set[i] = get_tsc();
+		gpio_set_value(gpio_dev, gpioOut, set);     
+		c_irq[i] = get_tsc();
+
+		set = !set;
+	
+		//~ cycles[rep++] = c_end - c_start;
+		mb();
+	}
+	
+	logTimes();
 
 }
 
 void run_client(void *p)
 {
 
-   
+	int ret;
+
+    
     
     tprintk("GPIO_EVAL VM started\n");
 
@@ -101,15 +170,21 @@ void run_client(void *p)
 	gpio_dev = init_vgpiofront(NULL);
 	
 	gpio_request(gpio_dev, gpioOut, NULL);
-	gpio_request(gpio_dev, gpioOutDom0, NULL);
 	gpio_request(gpio_dev, gpioIn, NULL);
 		
-	gpio_direction_output(gpio_dev, gpioOut, 1);
-	gpio_direction_output(gpio_dev, gpioOutDom0, 1);
+	gpio_direction_output(gpio_dev, gpioOut, 0);
 	gpio_direction_input(gpio_dev, gpioIn);
 		
+	ret = bind_pirq(PIRQ, 1, pirq_handler, NULL);
+	if(ret) {
+	 printk("Unabled to request irq: %u for use (error %d)\n", PIRQ, ret);
+	}
+		
+		
+	
 		
 	eval_irq();
+	//~ eval_toggle();
 	
 	msleep(400);
 

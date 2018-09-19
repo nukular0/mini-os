@@ -159,8 +159,8 @@ static int wait_for_backend_connect(xenbus_event_queue* events, char* path)
 {
    int state;
 
-   VCANFRONT_LOG("Waiting for backend connection on path ");
-   printk("%s\n", path);
+   //~ VCANFRONT_LOG("Waiting for backend connection on path ");
+   //~ printk("%s\n", path);
    /* Wait for the backend to connect */
    while(1) {
       state = xenbus_read_integer(path);
@@ -175,7 +175,7 @@ static int wait_for_backend_connect(xenbus_event_queue* events, char* path)
 	    return -1;
 	 /* If backend is connected then break out of loop */
 	 case XenbusStateConnected:
-	    VCANFRONT_LOG("Backend Connected\n");
+	    //~ VCANFRONT_LOG("Backend Connected\n");
 	    return 0;
 	 default:
 	    xenbus_wait_for_watch(events);
@@ -329,7 +329,7 @@ static struct vcanfront_dev* _init_vcanfront(struct vcanfront_dev* dev)
 	/* Get backend domid */
 	snprintf(path, 512, "%s/backend-id", dev->nodename);
 	dev->bedomid = xenbus_read_integer(path);
-	VCANFRONT_LOG("backend dom-id is %d\n", dev->bedomid);
+	//~ VCANFRONT_LOG("backend dom-id is %d\n", dev->bedomid);
 
 	/* Get backend xenstore path */
 	snprintf(path, 512, "%s/backend", dev->nodename);
@@ -338,7 +338,7 @@ static struct vcanfront_dev* _init_vcanfront(struct vcanfront_dev* dev)
 	  free(err);
 	  goto error;
 	}
-	VCANFRONT_LOG("backend path is %s\n", dev->bepath);
+	//~ VCANFRONT_LOG("backend path is %s\n", dev->bepath);
 
 	/* Create and publish grant reference and event channel */
 	if (vcanfront_connect(dev)) {
@@ -452,13 +452,20 @@ void suspend_vcanfront(void)
     mask_evtchn(vcanfront_evtchn);
 }
 
+#include "ma_eval.h"
 void resume_vcanfront(int rc)
 {
 	
     // rc == 0: resumed on a new host, so we need to 
     // connect to the new backend
     if (!rc) {	
+		#ifdef EVAL
+		t_resume_before_vcan = NOW();
+		#endif
 		_init_vcanfront(vcandev);
+		#ifdef EVAL
+		t_resume_vcan = NOW();
+		#endif
     }
     // _init_vcanfront() will already unmask the evtchnS
     // so we only need to do it if we are resumed on the same host

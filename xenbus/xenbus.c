@@ -521,12 +521,10 @@ xenbus_msg_reply(int type,
     int id;
     DEFINE_WAIT(w);
     struct xsd_sockmsg *rep;
-
     id = allocate_xenbus_id();
+
     add_waiter(w, req_info[id].waitq);
-
     xb_write(type, id, trans, io, nr_reqs);
-
     schedule();
     remove_waiter(w, req_info[id].waitq);
     wake(current_thread);

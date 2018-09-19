@@ -50,8 +50,17 @@
 #include <xen/features.h>
 #include <xen/version.h>
 
+#include <ma_eval.h>
+
 uint8_t xen_features[XENFEAT_NR_SUBMAPS * 32];
 char cmdline[MAX_CMDLINE_SIZE];
+
+#ifdef EVAL
+uint64_t time_suspended[NUM_SAMPLES];
+uint32_t suspend_counter = 0;
+uint64_t t_resume_start, t_resume_vcan, t_resume_app,t_resume_before_vcan;
+#endif
+int checkpoint_requested = 0;
 
 evtchn_port_t suspend_evtchn;
 struct semaphore suspend_sem;
@@ -103,6 +112,7 @@ void suspend_apps(void)
 
 void resume_frontends(int rc)
 {
+
 #ifdef CONFIG_NETFRONT
     resume_netfront(rc);
 #endif
@@ -110,7 +120,6 @@ void resume_frontends(int rc)
 #ifdef CONFIG_VCANFRONT
     resume_vcanfront(rc);
 #endif
-
 }
 
 void resume_apps(int rc)
@@ -118,14 +127,17 @@ void resume_apps(int rc)
 #ifdef CONFIG_APP_HEADLIGHT
 	resume_headlight_vm(rc);
 #endif
+
+#ifdef EVAL
+	resume_eval_vm(rc);
+#endif
 }
 
 void suspend_handler(evtchn_port_t port, struct pt_regs *regs, void *data)
 {
-//    printk("Suspend Handler called via event channel!\n");
+    //~ printk("Suspend Handler called via event channel!\n");
 
     notify_remote_via_evtchn(suspend_evtchn);
-//    local_irq_enable();
     up(&suspend_sem);
 
 }
@@ -163,16 +175,20 @@ void suspend_core_devices(void)
 
 void resume_core_devices(int err)
 {
+
     arch_resume_mm(err);
     
+
     resume_events();
-    
+
     local_irq_enable();
     
     //~ resume_console();
 
     resume_time();
-    
+#ifdef EVAL
+    t_resume_start = NOW();
+#endif
     resume_gnttab();
     
     //~ if (!err)
@@ -180,6 +196,7 @@ void resume_core_devices(int err)
     
     if(!err)
 		setup_suspend_evtchn();
+	
 }
 
 
@@ -198,10 +215,11 @@ void do_suspend(void)
 {
             unsigned long start_info_mfn = virt_to_mfn(xen_info);
             int rc;
-            struct timeval tv_start, tv_end;
-
+#ifdef EVAL
+            uint64_t t_start;
 	
-            gettimeofday(&tv_start, NULL);            
+            t_start = NOW();
+#endif			
             suspend_apps();
             suspend_frontends();
             suspend_core_devices();
@@ -214,7 +232,6 @@ void do_suspend(void)
             xen_info->console.domU.mfn = machine_to_phys_mapping[xen_info->console.domU.mfn];
 
             rc = HYPERVISOR_suspend((unsigned long)start_info_mfn);
-
             if (rc) {
                 xen_info->store_mfn = pfn_to_mfn(xen_info->store_mfn);
                 xen_info->console.domU.mfn = pfn_to_mfn(xen_info->console.domU.mfn);
@@ -227,11 +244,27 @@ void do_suspend(void)
             HYPERVISOR_shared_info = map_shared_info(xen_info);
 
             resume_core_devices(rc);
+				
+            
             resume_frontends(rc);  
             resume_apps(rc);
-            gettimeofday(&tv_end, NULL);
-  
-            
+#ifdef EVAL
+			checkpoint_requested = 0;
+			if(run_eval && suspend_counter < NUM_SAMPLES){
+				time_suspended[suspend_counter++] = NOW() - t_start;
+			}
+			
+            if(!rc){
+				t_start = NOW();
+				
+				printk("before VCAN resumed after %lu.%luus\n", (t_resume_before_vcan-t_resume_start)/1000, (t_resume_before_vcan-t_resume_start)%1000);
+				printk("resuming VCAN took        %lu.%luus\n", (t_resume_vcan - t_resume_before_vcan)/1000, (t_resume_vcan-t_resume_before_vcan)%1000);
+				printk("VCAN        resumed after %lu.%luus\n", (t_resume_vcan-t_resume_start)/1000, (t_resume_vcan-t_resume_start)%1000);
+				printk("APP         resumed after %lu.%luus\n", (t_resume_app-t_resume_start)/1000, (t_resume_app-t_resume_start)%1000);
+				printk("all         resumed after %lu.%luus\n", (t_start-t_resume_start)/1000, (t_start-t_resume_start)%1000);
+				printk("resumed at %lu\n", t_start);
+			}
+#endif            
             //~ printk(">> Suspend delay time: (s=%lu,us=%lu)\n", tv_end.tv_sec-tv_start.tv_sec, tv_end.tv_usec-tv_start.tv_usec);
 }
 /*static void shutdown_thread(void *p)
